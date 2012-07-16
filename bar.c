@@ -15,6 +15,8 @@ static xcb_window_t root, win;
 static xcb_gcontext_t gc;
 static int bw, bh;
 static const int pal[] = {COLOR0,COLOR1,COLOR2,COLOR3,COLOR4,COLOR5,COLOR6,COLOR7,COLOR8,COLOR9};
+static xcb_drawable_t canvas;
+
 
 #define MIN(a,b) ((a > b ? b : a))
 
@@ -30,22 +32,22 @@ draw (int x, int align, int fgcol, int bgcol, char *text)
 
     switch (align) {
         case 1:
-            xcb_copy_area (c, win, win, gc, bw / 2 - pos_x / 2, 0, bw / 2 - (pos_x + strw) / 2, 0, pos_x, BAR_HEIGHT);
+            xcb_copy_area (c, canvas, canvas, gc, bw / 2 - pos_x / 2, 0, bw / 2 - (pos_x + strw) / 2, 0, pos_x, BAR_HEIGHT);
             pos_x = bw / 2 - (pos_x + strw) / 2 + pos_x;
             break;
         case 2:
-            xcb_copy_area (c, win, win, gc, bw - pos_x, 0, bw - pos_x - strw, 0, pos_x, BAR_HEIGHT);
+            xcb_copy_area (c, canvas, canvas, gc, bw - pos_x, 0, bw - pos_x - strw, 0, pos_x, BAR_HEIGHT);
             pos_x = bw - strw; 
             break;
     }
+    /* Draw the background first */
+    xcb_change_gc (c, gc, XCB_GC_FOREGROUND, (const uint32_t []){ pal[bgcol] });
+    xcb_poly_fill_rectangle (c, canvas, gc, 1, (const xcb_rectangle_t []){ pos_x, 0, strw, BAR_HEIGHT });
     /* Setup the colors */
     xcb_change_gc (c, gc, XCB_GC_FOREGROUND, (const uint32_t []){ pal[fgcol] });
     xcb_change_gc (c, gc, XCB_GC_BACKGROUND, (const uint32_t []){ pal[bgcol] });
-    xcb_change_window_attributes (c, win, XCB_CW_BACK_PIXEL, (const uint32_t []){ pal[bgcol] });
-    /* Draw the background first */
-    xcb_clear_area (c, 0, win, pos_x, 0, strw, BAR_HEIGHT);
     do {
-        xcb_image_text_8 (c, MIN(len - done, 255), win, gc, pos_x, bh - ft_height / 2, text + done); /* Bottom-left coords */
+        xcb_image_text_8 (c, MIN(len - done, 255), canvas, gc, pos_x, bh - ft_height / 2, text + done); /* Bottom-left coords */
         done += MIN(len - done, 255);
         pos_x = done * ft_width;
     } while (done < len);
@@ -67,7 +69,8 @@ parse (char *text)
     int fgcol = 1;
     int bgcol = 0;
 
-    xcb_clear_area (c, 0, win, 0, 0, bw, BAR_HEIGHT);
+    xcb_change_gc (c, gc, XCB_GC_FOREGROUND, (const uint32_t []){ pal[0] });
+    xcb_poly_fill_rectangle (c, canvas, gc, 1, (const xcb_rectangle_t []){ 0, 0, bw, BAR_HEIGHT });
     for (;;) {
         if (*p == 0x0 || *p == 0xA || (*p == '\\' && p++ && *p != '\\' && strchr ("fblcr", *p))) {
             pos_x += draw (pos_x, align, fgcol, bgcol, parsed_text);
@@ -91,6 +94,7 @@ parse (char *text)
 void
 cleanup (void)
 {
+    xcb_free_pixmap (c, canvas);
     xcb_destroy_window (c, win);
     xcb_free_gc (c, gc);
     xcb_disconnect (c);
@@ -136,6 +140,9 @@ init (void)
     xcb_create_window (c, XCB_COPY_FROM_PARENT, win, root, 0, 0, bw, bh, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, 
             scr->root_visual, XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT, 
             (const uint32_t []){ pal[0], 1 });
+    /* Create a temporary canvas */
+    canvas = xcb_generate_id (c);
+    xcb_create_pixmap (c, scr->root_depth, canvas, root, bw, BAR_HEIGHT);
     /* Create the gc for drawing */
     gc = xcb_generate_id (c);
     xcb_create_gc (c, gc, root, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND | XCB_GC_FONT,
@@ -169,6 +176,7 @@ main (int argc, char **argv)
 
     while (fgets (input, sizeof(input), stdin)) {
             parse (input);
+            xcb_copy_area (c, canvas, win, gc, 0, 0, 0, 0, bw, BAR_HEIGHT);
             xcb_flush (c);
     }
     /* There's no more data, but the user still wants to see it */
