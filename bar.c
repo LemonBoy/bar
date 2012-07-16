@@ -67,8 +67,10 @@ parse (char *text)
             switch (*p++) {
                 case 0x0: return; /* EOL */
                 case 0xA: return; /* NL */
-                case 'f': if (isdigit (*p)) xcb_change_gc (c, gc, XCB_GC_FOREGROUND, (const uint32_t []){ pal[*p-'0'] }); p++; break;
-                case 'b': if (isdigit (*p)) xcb_change_gc (c, gc, XCB_GC_BACKGROUND, (const uint32_t []){ pal[*p-'0'] }); p++; break;
+                case 'f': if (*p == 'r') *p = '1'; if (isdigit (*p)) 
+                              xcb_change_gc (c, gc, XCB_GC_FOREGROUND, (const uint32_t []){ pal[*p-'0'] }); p++; break;
+                case 'b': if (*p == 'r') *p = '0'; if (isdigit (*p)) 
+                              xcb_change_gc (c, gc, XCB_GC_BACKGROUND, (const uint32_t []){ pal[*p-'0'] }); p++; break;
                 case 'l': align = 0; pos_x = 0; break;
                 case 'c': align = 1; pos_x = 0; break;
                 case 'r': align = 2; pos_x = 0; break;
