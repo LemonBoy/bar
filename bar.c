@@ -26,7 +26,7 @@ draw (int x, int align, int fgcol, int bgcol, char *text)
     int len = MIN(bw / ft_width, strlen (text));
     int strw = len * ft_width;
 
-    if (!strw) return x;
+    if (!strw) return 0;
 
     switch (align) {
         case 1:
