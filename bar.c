@@ -3,6 +3,9 @@
 #include <string.h>
 #include <ctype.h>
 #include <signal.h>
+#include <poll.h>
+#include <getopt.h>
+#include <unistd.h>
 #include <xcb/xcb.h>
 
 #include "config.h"
@@ -14,9 +17,8 @@ static int ft_height, ft_width;
 static xcb_window_t root, win;
 static xcb_gcontext_t gc;
 static int bw, bh;
-static const int pal[] = {COLOR0,COLOR1,COLOR2,COLOR3,COLOR4,COLOR5,COLOR6,COLOR7,COLOR8,COLOR9};
+static const uint32_t pal[] = {COLOR0,COLOR1,COLOR2,COLOR3,COLOR4,COLOR5,COLOR6,COLOR7,COLOR8,COLOR9};
 static xcb_drawable_t canvas;
-
 
 #define MIN(a,b) ((a > b ? b : a))
 
@@ -42,7 +44,7 @@ draw (int x, int align, int fgcol, int bgcol, char *text)
     }
     /* Draw the background first */
     xcb_change_gc (c, gc, XCB_GC_FOREGROUND, (const uint32_t []){ pal[bgcol] });
-    xcb_poly_fill_rectangle (c, canvas, gc, 1, (const xcb_rectangle_t []){ pos_x, 0, strw, BAR_HEIGHT });
+    xcb_poly_fill_rectangle (c, canvas, gc, 1, (const xcb_rectangle_t []){ {pos_x, 0, strw, BAR_HEIGHT} });
     /* Setup the colors */
     xcb_change_gc (c, gc, XCB_GC_FOREGROUND, (const uint32_t []){ pal[fgcol] });
     xcb_change_gc (c, gc, XCB_GC_BACKGROUND, (const uint32_t []){ pal[bgcol] });
@@ -70,7 +72,7 @@ parse (char *text)
     int bgcol = 0;
 
     xcb_change_gc (c, gc, XCB_GC_FOREGROUND, (const uint32_t []){ pal[0] });
-    xcb_poly_fill_rectangle (c, canvas, gc, 1, (const xcb_rectangle_t []){ 0, 0, bw, BAR_HEIGHT });
+    xcb_poly_fill_rectangle (c, canvas, gc, 1, (const xcb_rectangle_t []){ {0, 0, bw, BAR_HEIGHT} });
     for (;;) {
         if (*p == 0x0 || *p == 0xA || (*p == '\\' && p++ && *p != '\\' && strchr ("fblcr", *p))) {
             pos_x += draw (pos_x, align, fgcol, bgcol, parsed_text);
@@ -103,8 +105,7 @@ cleanup (void)
 void
 sighandle (int signal)
 {
-    if (signal == SIGINT || signal == SIGTERM)
-        exit (0);
+    if (signal == SIGINT || signal == SIGTERM) exit (0);
 }
 
 void
@@ -138,8 +139,8 @@ init (void)
     /* Create the main window */
     win = xcb_generate_id (c);
     xcb_create_window (c, XCB_COPY_FROM_PARENT, win, root, 0, 0, bw, bh, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, 
-            scr->root_visual, XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT, 
-            (const uint32_t []){ pal[0], 1 });
+            scr->root_visual, XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK, 
+            (const uint32_t []){ pal[0], 1, XCB_EVENT_MASK_EXPOSURE });
     /* Create a temporary canvas */
     canvas = xcb_generate_id (c);
     xcb_create_pixmap (c, scr->root_depth, canvas, root, bw, BAR_HEIGHT);
@@ -158,6 +159,7 @@ int
 main (int argc, char **argv)
 {
     static char input[1024] = {0, };
+    xcb_expose_event_t *e;
     int permanent = 0;
     char ch;
 
@@ -174,14 +176,26 @@ main (int argc, char **argv)
     signal (SIGTERM, sighandle);
     init ();
 
-    while (fgets (input, sizeof(input), stdin)) {
+    xcb_change_gc (c, gc, XCB_GC_FOREGROUND, (const uint32_t []){ pal[0] });
+    xcb_poly_fill_rectangle (c, canvas, gc, 1, (const xcb_rectangle_t []){ {0, 0, bw, BAR_HEIGHT} });
+    struct pollfd pollin = { .fd = STDIN_FILENO, .events = POLLIN | POLLHUP};
+    for (;;) {
+        if (poll (&pollin, 1, -1) > 0) { /* Read from stdin */
+            if (pollin.revents & POLLHUP) break; /* No more data */
+            fgets (input, sizeof(input), stdin);
             parse (input);
             xcb_copy_area (c, canvas, win, gc, 0, 0, 0, 0, bw, BAR_HEIGHT);
-            xcb_flush (c);
+        }
+        if ((e = (xcb_expose_event_t *)xcb_poll_for_event (c))) { /* Handle the xcb expose event */
+            if (e && (e->response_type & ~0x80) == XCB_EXPOSE) {
+                xcb_copy_area (c, canvas, win, gc, e->x, e->y, e->x, e->y, e->width, e->height);
+                free (e);
+            }
+        }
+        xcb_flush (c);
     }
     /* There's no more data, but the user still wants to see it */
-    while (permanent) sleep(1);
+    while (permanent) sleep (1);
 
     return 0;
 }
-    
