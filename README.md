@@ -6,6 +6,15 @@ A lightweight bar based on XCB (yay). Provides foreground/background color
 switching along with text alignment (screw you dzen!), nothing less and 
 nothing more.
 
+Options
+-------
+bar accpets a couple of command line switches
+
+```
+-h      Shows the help and bails out.
+-p      Make the bar permanent.
+```
+
 Configuration
 -------------
 Change the config.h file and you're good to go!

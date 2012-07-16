@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <poll.h>
 #include <signal.h>
 #include <xcb/xcb.h>
 
@@ -52,7 +51,7 @@ draw (int x, int align, char *text)
 void
 parse (char *text)
 {
-    char parsed_text[1000] = {0, };
+    char parsed_text[1024] = {0, };
 
     char *p = text;
     char *q = parsed_text;
@@ -143,26 +142,31 @@ init (void)
 }
 
 int 
-main (void)
+main (int argc, char **argv)
 {
-    struct pollfd stdinpoll = { .fd = 0, .events = POLLIN | POLLHUP };
-    static char input[1000] = {0, };
+    static char input[1024] = {0, };
+    int permanent = 0;
+    char ch;
+
+    while ((ch = getopt (argc, argv, "ph")) != -1) {
+        switch (ch) {
+            case 'h': 
+                printf ("usage: %s [-p | -h]\n\t-h Shows this help\n\t-p Don't close after the data ends\n", argv[0]); exit (0);
+            case 'p': permanent = 1; break;
+        }
+    }
 
     atexit (cleanup);
     signal (SIGINT, sighandle);
     signal (SIGTERM, sighandle);
     init ();
 
-    for (;;) {
-        if (poll (&stdinpoll, 1, -1) > 0) {
-            if (stdinpoll.revents & POLLHUP) break;
-            if (stdinpoll.revents & POLLIN) {
-                fgets (input, sizeof(input), stdin);
-                parse (input);
-                xcb_flush (c);
-            }
-        }
+    while (fgets (input, sizeof(input), stdin)) {
+            parse (input);
+            xcb_flush (c);
     }
+    /* There's no more data, but the user still wants to see it */
+    while (permanent);
 
     return 0;
 }
