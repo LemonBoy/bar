@@ -22,6 +22,13 @@ static xcb_drawable_t canvas;
 
 #define MIN(a,b) ((a > b ? b : a))
 
+void
+fillrect (int color, int x, int y, int width, int height)
+{
+    xcb_change_gc (c, gc, XCB_GC_FOREGROUND, (const uint32_t []){ pal[color] });
+    xcb_poly_fill_rectangle (c, canvas, gc, 1, (const xcb_rectangle_t []){ { x, y, width, height } });
+}
+
 int
 draw (int x, int align, int fgcol, int bgcol, char *text)
 {
@@ -43,8 +50,7 @@ draw (int x, int align, int fgcol, int bgcol, char *text)
             break;
     }
     /* Draw the background first */
-    xcb_change_gc (c, gc, XCB_GC_FOREGROUND, (const uint32_t []){ pal[bgcol] });
-    xcb_poly_fill_rectangle (c, canvas, gc, 1, (const xcb_rectangle_t []){ {pos_x, 0, strw, BAR_HEIGHT} });
+    fillrect (bgcol, pos_x, 0, strw, BAR_HEIGHT);
     /* Setup the colors */
     xcb_change_gc (c, gc, XCB_GC_FOREGROUND, (const uint32_t []){ pal[fgcol] });
     xcb_change_gc (c, gc, XCB_GC_BACKGROUND, (const uint32_t []){ pal[bgcol] });
@@ -71,8 +77,7 @@ parse (char *text)
     int fgcol = 1;
     int bgcol = 0;
 
-    xcb_change_gc (c, gc, XCB_GC_FOREGROUND, (const uint32_t []){ pal[0] });
-    xcb_poly_fill_rectangle (c, canvas, gc, 1, (const xcb_rectangle_t []){ {0, 0, bw, BAR_HEIGHT} });
+    fillrect (0, 0, 0, bw, BAR_HEIGHT);
     for (;;) {
         if (*p == 0x0 || *p == 0xA || (*p == '\\' && p++ && *p != '\\' && strchr ("fblcr", *p))) {
             pos_x += draw (pos_x, align, fgcol, bgcol, parsed_text);
@@ -158,15 +163,23 @@ init (void)
 int 
 main (int argc, char **argv)
 {
+    struct pollfd pollin = { .fd = STDIN_FILENO, .events = POLLIN };
     static char input[1024] = {0, };
-    xcb_expose_event_t *e;
-    int permanent = 0;
-    char ch;
 
+    xcb_generic_event_t *ev;
+    xcb_expose_event_t *expose_ev;
+
+    int permanent = 0;
+    int hup = 0;
+
+    char ch;
     while ((ch = getopt (argc, argv, "ph")) != -1) {
         switch (ch) {
             case 'h': 
-                printf ("usage: %s [-p | -h]\n\t-h Shows this help\n\t-p Don't close after the data ends\n", argv[0]); exit (0);
+                printf ("usage: %s [-p | -h]\n"
+                        "\t-h Shows this help\n"
+                        "\t-p Don't close after the data ends\n", argv[0]); 
+                exit (0);
             case 'p': permanent = 1; break;
         }
     }
@@ -176,26 +189,32 @@ main (int argc, char **argv)
     signal (SIGTERM, sighandle);
     init ();
 
-    xcb_change_gc (c, gc, XCB_GC_FOREGROUND, (const uint32_t []){ pal[0] });
-    xcb_poly_fill_rectangle (c, canvas, gc, 1, (const xcb_rectangle_t []){ {0, 0, bw, BAR_HEIGHT} });
-    struct pollfd pollin = { .fd = STDIN_FILENO, .events = POLLIN | POLLHUP};
+    fillrect (0, 0, 0, bw, BAR_HEIGHT);
+
     for (;;) {
-        if (poll (&pollin, 1, -1) > 0) { /* Read from stdin */
-            if (pollin.revents & POLLHUP) break; /* No more data */
+        if (!hup && poll (&pollin, 1, 1001) > 0) {
+            if (pollin.revents & POLLHUP) hup = 1;
             fgets (input, sizeof(input), stdin);
             parse (input);
             xcb_copy_area (c, canvas, win, gc, 0, 0, 0, 0, bw, BAR_HEIGHT);
         }
-        if ((e = (xcb_expose_event_t *)xcb_poll_for_event (c))) { /* Handle the xcb expose event */
-            if (e && (e->response_type & ~0x80) == XCB_EXPOSE) {
-                xcb_copy_area (c, canvas, win, gc, e->x, e->y, e->x, e->y, e->width, e->height);
-                free (e);
+        if ((ev = xcb_poll_for_event (c))) {
+            expose_ev = (xcb_expose_event_t *)ev;
+
+            switch (ev->response_type) {
+                case XCB_EXPOSE: xcb_copy_area (c, canvas, win, gc, expose_ev->x, expose_ev->y,
+                        expose_ev->x, expose_ev->y, expose_ev->width, expose_ev->height); break;
             }
+            free (ev);
         }
+
         xcb_flush (c);
+
+        if (hup) {
+            if (!permanent) break;      /* No more data, bail out */
+            else            sleep (1);  /* Idle loop, yield to avoid cpu hogging */
+        }
     }
-    /* There's no more data, but the user still wants to see it */
-    while (permanent) sleep (1);
 
     return 0;
 }
