@@ -157,7 +157,6 @@ init (void)
     xcb_close_font (c, xf);
     /* Make the bar visible */
     xcb_map_window (c, win);
-    xcb_flush (c);
 }
 
 int 
@@ -192,19 +191,21 @@ main (int argc, char **argv)
     fillrect (0, 0, 0, bw, BAR_HEIGHT);
 
     for (;;) {
-        if (!hup && poll (&pollin, 1, 1001) > 0) {
+        if (!hup && poll (&pollin, 1, 500) > 0) {
             if (pollin.revents & POLLHUP) hup = 1;
             fgets (input, sizeof(input), stdin);
             parse (input);
             xcb_copy_area (c, canvas, win, gc, 0, 0, 0, 0, bw, BAR_HEIGHT);
         }
-        if ((ev = xcb_poll_for_event (c))) {
+
+        while ((ev = xcb_poll_for_event (c))) {
             expose_ev = (xcb_expose_event_t *)ev;
 
-            switch (ev->response_type) {
+            switch (ev->response_type & 0x7F) {
                 case XCB_EXPOSE: xcb_copy_area (c, canvas, win, gc, expose_ev->x, expose_ev->y,
                         expose_ev->x, expose_ev->y, expose_ev->width, expose_ev->height); break;
             }
+
             free (ev);
         }
 
