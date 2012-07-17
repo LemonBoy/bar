@@ -17,6 +17,12 @@ all: ${EXEC}
 .c.o:
 	${CC} ${CFLAGS} -o $@ -c $<
 
+${OBJS}: config.h
+
+config.h:
+	@echo creating $@ from config.def.h
+	@cp config.def.h $@
+
 ${EXEC}: ${OBJS}
 	${CC} ${LDFLAGS} -o ${EXEC} ${OBJS}
 	${STRIP} -s ${EXEC}
