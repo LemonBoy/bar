@@ -162,7 +162,7 @@ init (void)
 int 
 main (int argc, char **argv)
 {
-    struct pollfd pollin = { .fd = STDIN_FILENO, .events = POLLIN };
+    struct pollfd pollin[2] = { { .fd = STDIN_FILENO, .events = POLLIN }, { .fd = -1, .events = POLLIN } };
     static char input[1024] = {0, };
 
     xcb_generic_event_t *ev;
@@ -188,33 +188,41 @@ main (int argc, char **argv)
     signal (SIGTERM, sighandle);
     init ();
 
+    /* Get the fd to Xserver */
+    pollin[1].fd = xcb_get_file_descriptor (c);
+
     fillrect (0, 0, 0, bw, BAR_HEIGHT);
 
     for (;;) {
-        if (!hup && poll (&pollin, 1, 500) > 0) {
-            if (pollin.revents & POLLHUP) hup = 1;
-            fgets (input, sizeof(input), stdin);
-            parse (input);
-            xcb_copy_area (c, canvas, win, gc, 0, 0, 0, 0, bw, BAR_HEIGHT);
-        }
+        int redraw = 0;
 
-        while ((ev = xcb_poll_for_event (c))) {
-            expose_ev = (xcb_expose_event_t *)ev;
-
-            switch (ev->response_type & 0x7F) {
-                case XCB_EXPOSE: xcb_copy_area (c, canvas, win, gc, expose_ev->x, expose_ev->y,
-                        expose_ev->x, expose_ev->y, expose_ev->width, expose_ev->height); break;
+        if (poll ((struct pollfd *)&pollin, 2, -1) > 0) {
+            if (pollin[0].revents & POLLHUP) pollin[0].fd = -1; /* No more data, just null it :D */
+            if (pollin[0].revents & POLLIN) { /* New input, process it */
+                fgets (input, sizeof(input), stdin);
+                parse (input);
+                redraw = 1;
             }
+            if (pollin[1].revents & POLLIN) { /* Xserver broadcasted an event */
+                while ((ev = xcb_poll_for_event (c))) {
+                    expose_ev = (xcb_expose_event_t *)ev;
 
-            free (ev);
+                    switch (ev->response_type & 0x7F) {
+                        case XCB_EXPOSE: 
+                            if (expose_ev->count == 0) redraw = 1; 
+                        break;
+                    }
+
+                    free (ev);
+                }
+            }
         }
 
+        if (redraw) /* Copy our temporary pixmap onto the window */
+            xcb_copy_area (c, canvas, win, gc, 0, 0, 0, 0, bw, BAR_HEIGHT);
         xcb_flush (c);
-
-        if (hup) {
-            if (!permanent) break;      /* No more data, bail out */
-            else            sleep (1);  /* Idle loop, yield to avoid cpu hogging */
-        }
+        if (hup && !permanent) 
+            break; /* No more data, bail out */
     }
 
     return 0;
