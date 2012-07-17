@@ -1,0 +1,5 @@
+config.h
+bar
+*.o
+*.swp
+*~
