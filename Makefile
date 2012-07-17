@@ -1,6 +1,6 @@
 CC	?= gcc
 STRIP ?= strip
-CFLAGS ?= -O2
+CFLAGS ?= -Os
 LDFLAGS += -lxcb
 CFDEBUG = -g3 -pedantic -Wall -Wunused-parameter -Wlong-long\
 		  -Wsign-conversion -Wconversion -Wimplicit-function-declaration
@@ -16,6 +16,12 @@ all: ${EXEC}
 
 .c.o:
 	${CC} ${CFLAGS} -o $@ -c $<
+
+${OBJS}: config.h
+
+config.h:
+	@echo creating $@ from config.def.h
+	@cp config.def.h $@
 
 ${EXEC}: ${OBJS}
 	${CC} ${LDFLAGS} -o ${EXEC} ${OBJS}
