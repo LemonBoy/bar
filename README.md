@@ -21,6 +21,18 @@ Change the config.h file and you're good to go!
 The text background and foreground are respectively the first and the second
 entries in the palette (COLOR0 and COLOR1).
 
+Colors
+------
+Attached there's palette.pl, an handy tool that extracts a palette from your
+X colors and returns it ready to be pasted in the configuration file.
+
+```
+palette.pl <.Xresources / .Xdefaults path>
+```
+
+If you keep your colors in a separate file just feed that file and you're good
+to go.
+
 Text formatting
 ---------------
 All the format commands are preceded by a backslash (\\). 
