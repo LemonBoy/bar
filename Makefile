@@ -1,6 +1,6 @@
 CC	?= gcc
 STRIP ?= strip
-CFLAGS ?= -Os
+CFLAGS ?= -fshort-wchar -Os
 LDFLAGS += -lxcb
 CFDEBUG = -g3 -pedantic -Wall -Wunused-parameter -Wlong-long\
 		  -Wsign-conversion -Wconversion -Wimplicit-function-declaration

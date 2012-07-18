@@ -29,12 +29,20 @@ fillrect (int color, int x, int y, int width, int height)
     xcb_poly_fill_rectangle (c, canvas, gc, 1, (const xcb_rectangle_t []){ { x, y, width, height } });
 }
 
+/* libc doesn't give a shit to -fshort-wchar, so here's our wcslen */
+size_t
+wcslen_ (wchar_t *s) { 
+    size_t len; 
+    for (len = 0; *s; s++);
+    return len;
+}
+
 int
-draw (int x, int align, int fgcol, int bgcol, char *text)
+draw (int x, int align, int fgcol, int bgcol, wchar_t *text)
 {
     int done = 0;
     int pos_x = x;
-    int len = MIN(bw / ft_width, strlen (text));
+    int len = MIN(bw / ft_width, wcslen_ (text));
     int strw = len * ft_width;
 
     if (!strw) return 0;
@@ -55,7 +63,8 @@ draw (int x, int align, int fgcol, int bgcol, char *text)
     xcb_change_gc (c, gc, XCB_GC_FOREGROUND, (const uint32_t []){ pal[fgcol] });
     xcb_change_gc (c, gc, XCB_GC_BACKGROUND, (const uint32_t []){ pal[bgcol] });
     do {
-        xcb_image_text_8 (c, MIN(len - done, 255), canvas, gc, pos_x, bh - ft_height / 2, text + done); /* Bottom-left coords */
+        xcb_image_text_16 (c, MIN(len - done, 255), canvas, gc, pos_x, bh - ft_height / 2, /* Bottom left coords */
+                (xcb_char2b_t *)text + done);
         done += MIN(len - done, 255);
         pos_x = done * ft_width;
     } while (done < len);
@@ -66,10 +75,10 @@ draw (int x, int align, int fgcol, int bgcol, char *text)
 void
 parse (char *text)
 {
-    char parsed_text[1024] = {0, };
+    wchar_t parsed_text[2048] = {0, };
 
-    char *p = text;
-    char *q = parsed_text;
+    wchar_t *q = parsed_text;
+    char    *p = text;
 
     int pos_x = 0;
     int align = 0;
@@ -91,9 +100,22 @@ parse (char *text)
                 case 'r': align = 2; pos_x = 0; break;
             }
             q = parsed_text;
-        } 
-        else *q++ = *p++; 
-  
+        } else { /* utf-8 -> ucs-2 */
+            if (!(p[0] & 0x80)) {
+                *q++ = p[0] << 8; 
+                p   += 1;
+            }
+            else if ((p[0] & 0xe0) == 0xc0 && (p[1] & 0xc0) == 0x80) {
+                wchar_t t = (p[0] & 0x1f) << 6 | p[1] & 0x3f;
+                *q++ = (t >> 8) | (t << 8);
+                p   += 2;
+            }
+            else if ((p[0] & 0xf0) == 0xe0 && (p[1] & 0xc0) == 0x80 && (p[2] & 0xc0) == 0x80) {
+                wchar_t t = (p[0] & 0xf) << 12 | (p[1] & 0x3f) << 6 | p[2] & 0x3f;
+                *q++ = (t >> 8) | (t << 8);
+                p   += 3;
+            }
+        }
         *q = 0;
     }
 }
@@ -157,6 +179,7 @@ init (void)
     xcb_close_font (c, xf);
     /* Make the bar visible */
     xcb_map_window (c, win);
+    xcb_flush (c);
 }
 
 int 
