@@ -192,7 +192,6 @@ main (int argc, char **argv)
     xcb_expose_event_t *expose_ev;
 
     int permanent = 0;
-    int hup = 0;
 
     char ch;
     while ((ch = getopt (argc, argv, "ph")) != -1) {
@@ -220,7 +219,10 @@ main (int argc, char **argv)
         int redraw = 0;
 
         if (poll ((struct pollfd *)&pollin, 2, -1) > 0) {
-            if (pollin[0].revents & POLLHUP) pollin[0].fd = -1; /* No more data, just null it :D */
+            if (pollin[0].revents & POLLHUP) {      /* No more data... */
+                if (permanent) pollin[0].fd = -1;   /* ...null the fd and continue polling :D */
+                else           break;               /* ...bail out */
+            }
             if (pollin[0].revents & POLLIN) { /* New input, process it */
                 fgets (input, sizeof(input), stdin);
                 parse (input);
@@ -244,8 +246,6 @@ main (int argc, char **argv)
         if (redraw) /* Copy our temporary pixmap onto the window */
             xcb_copy_area (c, canvas, win, gc, 0, 0, 0, 0, bw, BAR_HEIGHT);
         xcb_flush (c);
-        if (hup && !permanent) 
-            break; /* No more data, bail out */
     }
 
     return 0;
