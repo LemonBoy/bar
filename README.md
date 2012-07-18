@@ -8,7 +8,7 @@ nothing more.
 
 Options
 -------
-bar accpets a couple of command line switches
+bar accepts a couple of command line switches.
 
 ```
 -h      Shows the help and bails out.
