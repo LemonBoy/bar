@@ -33,7 +33,7 @@ fillrect (int color, int x, int y, int width, int height)
 size_t
 wcslen_ (wchar_t *s) { 
     size_t len; 
-    for (len = 0; *s; s++);
+    for (len = 0; *s; s++, len++);
     return len;
 }
 
