@@ -13,12 +13,12 @@
 // Here be dragons
 
 static xcb_connection_t *c;
-static int font_height, font_width, font_descent;
 static xcb_window_t root, win;
 static xcb_gcontext_t gc;
+static xcb_drawable_t canvas;
+static int font_height, font_width, font_descent;
 static int bar_width;
 static const uint32_t pal[] = {COLOR0,COLOR1,COLOR2,COLOR3,COLOR4,COLOR5,COLOR6,COLOR7,COLOR8,COLOR9};
-static xcb_drawable_t canvas;
 
 #define MIN(a,b) ((a > b ? b : a))
 
@@ -38,7 +38,7 @@ wcslen_ (wchar_t *s) {
 }
 
 int
-draw_string (int x, int align, int fgcol, int bgcol, wchar_t *text)
+draw_string (int x, int align, int fgcol, int bgcol, int udcol, wchar_t *text)
 {
     int done = 0;
     int pos_x = x;
@@ -61,6 +61,8 @@ draw_string (int x, int align, int fgcol, int bgcol, wchar_t *text)
     }
     /* Draw the background first */
     fill_rect (bgcol, pos_x, 0, strw, BAR_HEIGHT);
+    /* Draw the underline */
+    if (BAR_UNDERLINE_HEIGHT) fill_rect (udcol, pos_x, BAR_HEIGHT-BAR_UNDERLINE_HEIGHT, strw, BAR_UNDERLINE_HEIGHT);
     /* Setup the colors */
     xcb_change_gc (c, gc, XCB_GC_FOREGROUND, (const uint32_t []){ pal[fgcol] });
     xcb_change_gc (c, gc, XCB_GC_BACKGROUND, (const uint32_t []){ pal[bgcol] });
@@ -87,16 +89,18 @@ parse (char *text)
 
     int fgcol = 1;
     int bgcol = 0;
+    int udcol = 0;
 
     fill_rect (0, 0, 0, bar_width, BAR_HEIGHT);
     for (;;) {
-        if (*p == 0x0 || *p == 0xA || (*p == '\\' && p++ && *p != '\\' && strchr ("fblcr", *p))) {
-            pos_x += draw_string (pos_x, align, fgcol, bgcol, parsed_text);
+        if (*p == 0x0 || *p == 0xA || (*p == '\\' && p++ && *p != '\\' && strchr ("fbulcr", *p))) {
+            pos_x += draw_string (pos_x, align, fgcol, bgcol, udcol, parsed_text);
             switch (*p++) {
                 case 0x0: return; /* EOL */
                 case 0xA: return; /* NL */
                 case 'f': if (*p == 'r') *p = '1'; if (isdigit (*p)) { fgcol = *p-'0'; } p++; break;
                 case 'b': if (*p == 'r') *p = '0'; if (isdigit (*p)) { bgcol = *p-'0'; } p++; break;
+                case 'u': if (*p == 'r') *p = '0'; if (isdigit (*p)) { udcol = *p-'0'; } p++; break;
                 case 'l': align = 0; pos_x = 0; break;
                 case 'c': align = 1; pos_x = 0; break;
                 case 'r': align = 2; pos_x = 0; break;
