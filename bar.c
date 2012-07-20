@@ -13,7 +13,7 @@
 // Here be dragons
 
 static xcb_connection_t *c;
-static int ft_height, ft_width;
+static int ft_height, ft_width, ft_descent;
 static xcb_window_t root, win;
 static xcb_gcontext_t gc;
 static int bw, bh;
@@ -63,7 +63,7 @@ draw (int x, int align, int fgcol, int bgcol, wchar_t *text)
     xcb_change_gc (c, gc, XCB_GC_FOREGROUND, (const uint32_t []){ pal[fgcol] });
     xcb_change_gc (c, gc, XCB_GC_BACKGROUND, (const uint32_t []){ pal[bgcol] });
     do {
-        xcb_image_text_16 (c, MIN(len - done, 255), canvas, gc, pos_x, bh - ft_height / 2, /* Bottom left coords */
+        xcb_image_text_16 (c, MIN(len - done, 255), canvas, gc, pos_x, bh / 2 + ft_height / 2 - ft_descent, /* Bottom left coords */
                 (xcb_char2b_t *)text + done);
         done += MIN(len - done, 255);
         pos_x = done * ft_width;
@@ -150,8 +150,8 @@ init (void)
     }
     /* Grab infos from the first screen */
     scr = xcb_setup_roots_iterator (xcb_get_setup (c)).data;
-    bw = scr->width_in_pixels;
-    bh = BAR_HEIGHT;
+    bw  = scr->width_in_pixels;
+    bh  = BAR_HEIGHT;
     root = scr->root;
     /* Load the font */
     xf = xcb_generate_id (c);
@@ -160,9 +160,10 @@ init (void)
         exit (1);
     }
     /* Grab infos from the font */
-    ft_info = xcb_query_font_reply (c, xcb_query_font (c, xf), NULL);
-    ft_height = ft_info->font_ascent + ft_info->font_descent;
-    ft_width = ft_info->max_bounds.character_width;
+    ft_info    = xcb_query_font_reply (c, xcb_query_font (c, xf), NULL);
+    ft_height  = ft_info->font_ascent + ft_info->font_descent;
+    ft_width   = ft_info->max_bounds.character_width;
+    ft_descent = ft_info->font_descent;
     /* Create the main window */
     win = xcb_generate_id (c);
     xcb_create_window (c, XCB_COPY_FROM_PARENT, win, root, 0, 0, bw, bh, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, 
