@@ -13,17 +13,17 @@
 // Here be dragons
 
 static xcb_connection_t *c;
-static int ft_height, ft_width, ft_descent;
+static int font_height, font_width, font_descent;
 static xcb_window_t root, win;
 static xcb_gcontext_t gc;
-static int bw, bh;
+static int bar_width;
 static const uint32_t pal[] = {COLOR0,COLOR1,COLOR2,COLOR3,COLOR4,COLOR5,COLOR6,COLOR7,COLOR8,COLOR9};
 static xcb_drawable_t canvas;
 
 #define MIN(a,b) ((a > b ? b : a))
 
 void
-fillrect (int color, int x, int y, int width, int height)
+fill_rect (int color, int x, int y, int width, int height)
 {
     xcb_change_gc (c, gc, XCB_GC_FOREGROUND, (const uint32_t []){ pal[color] });
     xcb_poly_fill_rectangle (c, canvas, gc, 1, (const xcb_rectangle_t []){ { x, y, width, height } });
@@ -38,35 +38,37 @@ wcslen_ (wchar_t *s) {
 }
 
 int
-draw (int x, int align, int fgcol, int bgcol, wchar_t *text)
+draw_string (int x, int align, int fgcol, int bgcol, wchar_t *text)
 {
     int done = 0;
     int pos_x = x;
-    int len = MIN(bw / ft_width, wcslen_ (text));
-    int strw = len * ft_width;
+    int len = MIN(bar_width / font_width, wcslen_ (text));
+    int strw = len * font_width;
 
     if (!strw) return 0;
 
     switch (align) {
         case 1:
-            xcb_copy_area (c, canvas, canvas, gc, bw / 2 - pos_x / 2, 0, bw / 2 - (pos_x + strw) / 2, 0, pos_x, BAR_HEIGHT);
-            pos_x = bw / 2 - (pos_x + strw) / 2 + pos_x;
+            xcb_copy_area (c, canvas, canvas, gc, bar_width / 2 - pos_x / 2, 0, 
+                    bar_width / 2 - (pos_x + strw) / 2, 0, pos_x, BAR_HEIGHT);
+            pos_x = bar_width / 2 - (pos_x + strw) / 2 + pos_x;
             break;
         case 2:
-            xcb_copy_area (c, canvas, canvas, gc, bw - pos_x, 0, bw - pos_x - strw, 0, pos_x, BAR_HEIGHT);
-            pos_x = bw - strw; 
+            xcb_copy_area (c, canvas, canvas, gc, bar_width - pos_x, 0, 
+                    bar_width - pos_x - strw, 0, pos_x, BAR_HEIGHT);
+            pos_x = bar_width - strw; 
             break;
     }
     /* Draw the background first */
-    fillrect (bgcol, pos_x, 0, strw, BAR_HEIGHT);
+    fill_rect (bgcol, pos_x, 0, strw, BAR_HEIGHT);
     /* Setup the colors */
     xcb_change_gc (c, gc, XCB_GC_FOREGROUND, (const uint32_t []){ pal[fgcol] });
     xcb_change_gc (c, gc, XCB_GC_BACKGROUND, (const uint32_t []){ pal[bgcol] });
     do {
-        xcb_image_text_16 (c, MIN(len - done, 255), canvas, gc, pos_x, bh / 2 + ft_height / 2 - ft_descent, /* Bottom left coords */
-                (xcb_char2b_t *)text + done);
+        xcb_image_text_16 (c, MIN(len - done, 255), canvas, gc, pos_x, /* String baseline coordinates */
+                BAR_HEIGHT / 2 + font_height / 2 - font_descent, (xcb_char2b_t *)text + done);
         done += MIN(len - done, 255);
-        pos_x = done * ft_width;
+        pos_x = done * font_width;
     } while (done < len);
 
     return pos_x;
@@ -86,10 +88,10 @@ parse (char *text)
     int fgcol = 1;
     int bgcol = 0;
 
-    fillrect (0, 0, 0, bw, BAR_HEIGHT);
+    fill_rect (0, 0, 0, bar_width, BAR_HEIGHT);
     for (;;) {
         if (*p == 0x0 || *p == 0xA || (*p == '\\' && p++ && *p != '\\' && strchr ("fblcr", *p))) {
-            pos_x += draw (pos_x, align, fgcol, bgcol, parsed_text);
+            pos_x += draw_string (pos_x, align, fgcol, bgcol, parsed_text);
             switch (*p++) {
                 case 0x0: return; /* EOL */
                 case 0xA: return; /* NL */
@@ -136,7 +138,7 @@ sighandle (int signal)
 }
 
 void
-ewmh (void)
+set_ewmh_props (void)
 {
     xcb_intern_atom_cookie_t cookies[4];
     xcb_atom_t atoms[4];
@@ -160,15 +162,15 @@ ewmh (void)
     xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atoms[2], XCB_ATOM_CARDINAL, 32, 1, 
             (const int []){ 0xffffffff } );
     xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atoms[3], XCB_ATOM_CARDINAL, 32, 12, 
-            (const int []) { 0, 0, BAR_HEIGHT, 0, 0, 0, 0, 0, bw, 0, 0} );
+            (const int []) { 0, 0, BAR_HEIGHT, 0, 0, 0, 0, 0, bar_width, 0, 0} );
 }
 
 void
 init (void)
 {
-    xcb_font_t xf;
+    xcb_font_t font;
     xcb_screen_t *scr;
-    xcb_query_font_reply_t *ft_info;
+    xcb_query_font_reply_t *font_info;
 
     /* Connect to X */
     c = xcb_connect (NULL, NULL);
@@ -177,37 +179,36 @@ init (void)
         exit (1);
     }
     /* Grab infos from the first screen */
-    scr = xcb_setup_roots_iterator (xcb_get_setup (c)).data;
-    bw  = scr->width_in_pixels;
-    bh  = BAR_HEIGHT;
+    scr  = xcb_setup_roots_iterator (xcb_get_setup (c)).data;
+    bar_width   = scr->width_in_pixels;
     root = scr->root;
     /* Load the font */
-    xf = xcb_generate_id (c);
-    if (xcb_request_check (c, xcb_open_font_checked (c, xf, strlen(BAR_FONT), BAR_FONT))) {
+    font = xcb_generate_id (c);
+    if (xcb_request_check (c, xcb_open_font_checked (c, font, strlen(BAR_FONT), BAR_FONT))) {
         fprintf (stderr, "Couldn't load the font\n");
         exit (1);
     }
     /* Grab infos from the font */
-    ft_info    = xcb_query_font_reply (c, xcb_query_font (c, xf), NULL);
-    ft_height  = ft_info->font_ascent + ft_info->font_descent;
-    ft_width   = ft_info->max_bounds.character_width;
-    ft_descent = ft_info->font_descent;
+    font_info    = xcb_query_font_reply (c, xcb_query_font (c, font), NULL);
+    font_height  = font_info->font_ascent + font_info->font_descent;
+    font_width   = font_info->max_bounds.character_width;
+    font_descent = font_info->font_descent;
     /* Create the main window */
     win = xcb_generate_id (c);
-    xcb_create_window (c, XCB_COPY_FROM_PARENT, win, root, 0, 0, bw, bh, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, 
-            scr->root_visual, XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK, 
-            (const uint32_t []){ pal[0], 1, XCB_EVENT_MASK_EXPOSURE });
+    xcb_create_window (c, XCB_COPY_FROM_PARENT, win, root, 0, 0, bar_width, BAR_HEIGHT,
+            0, XCB_WINDOW_CLASS_INPUT_OUTPUT, scr->root_visual, XCB_CW_BACK_PIXEL | 
+            XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK, (const uint32_t []){ pal[0], 1, XCB_EVENT_MASK_EXPOSURE });
     /* Set EWMH hints */
-    ewmh ();
+    set_ewmh_props ();
     /* Create a temporary canvas */
     canvas = xcb_generate_id (c);
-    xcb_create_pixmap (c, scr->root_depth, canvas, root, bw, BAR_HEIGHT);
+    xcb_create_pixmap (c, scr->root_depth, canvas, root, bar_width, BAR_HEIGHT);
     /* Create the gc for drawing */
     gc = xcb_generate_id (c);
     xcb_create_gc (c, gc, root, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND | XCB_GC_FONT,
-            (const uint32_t []){ pal[1], pal[0], xf });
+            (const uint32_t []){ pal[1], pal[0], font });
     /* Get rid of the font */
-    xcb_close_font (c, xf);
+    xcb_close_font (c, font);
     /* Make the bar visible */
     xcb_map_window (c, win);
     xcb_flush (c);
@@ -216,8 +217,11 @@ init (void)
 int 
 main (int argc, char **argv)
 {
-    struct pollfd pollin[2] = { { .fd = STDIN_FILENO, .events = POLLIN }, { .fd = -1, .events = POLLIN } };
     static char input[1024] = {0, };
+    struct pollfd pollin[2] = { 
+        { .fd = STDIN_FILENO, .events = POLLIN }, 
+        { .fd = -1          , .events = POLLIN }, 
+    };
 
     xcb_generic_event_t *ev;
     xcb_expose_event_t *expose_ev;
@@ -244,7 +248,7 @@ main (int argc, char **argv)
     /* Get the fd to Xserver */
     pollin[1].fd = xcb_get_file_descriptor (c);
 
-    fillrect (0, 0, 0, bw, BAR_HEIGHT);
+    fill_rect (0, 0, 0, bar_width, BAR_HEIGHT);
 
     for (;;) {
         int redraw = 0;
@@ -275,7 +279,7 @@ main (int argc, char **argv)
         }
 
         if (redraw) /* Copy our temporary pixmap onto the window */
-            xcb_copy_area (c, canvas, win, gc, 0, 0, 0, 0, bw, BAR_HEIGHT);
+            xcb_copy_area (c, canvas, win, gc, 0, 0, 0, 0, bar_width, BAR_HEIGHT);
         xcb_flush (c);
     }
 
