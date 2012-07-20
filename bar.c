@@ -136,6 +136,34 @@ sighandle (int signal)
 }
 
 void
+ewmh (void)
+{
+    xcb_intern_atom_cookie_t cookies[4];
+    xcb_atom_t atoms[4];
+    xcb_intern_atom_reply_t *reply;
+
+    cookies[0] = xcb_intern_atom (c, 0, strlen ("_NET_WM_WINDOW_TYPE")     , "_NET_WM_WINDOW_TYPE");
+    cookies[1] = xcb_intern_atom (c, 0, strlen ("_NET_WM_WINDOW_TYPE_DOCK"), "_NET_WM_WINDOW_TYPE_DOCK");
+    cookies[2] = xcb_intern_atom (c, 0, strlen ("_NET_WM_DESKTOP")         , "_NET_WM_DESKTOP");
+    cookies[3] = xcb_intern_atom (c, 0, strlen ("_NET_WM_STRUT_PARTIAL")   , "_NET_WM_STRUT_PARTIAL");
+
+    reply = xcb_intern_atom_reply (c, cookies[0], NULL);
+    atoms[0] = reply->atom; free (reply);
+    reply = xcb_intern_atom_reply (c, cookies[1], NULL);
+    atoms[1] = reply->atom; free (reply);
+    reply = xcb_intern_atom_reply (c, cookies[2], NULL);
+    atoms[2] = reply->atom; free (reply);
+    reply = xcb_intern_atom_reply (c, cookies[3], NULL);
+    atoms[3] = reply->atom; free (reply);
+
+    xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atoms[0], XCB_ATOM_ATOM, 32, 1, &atoms[1]);
+    xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atoms[2], XCB_ATOM_CARDINAL, 32, 1, 
+            (const int []){ 0xffffffff } );
+    xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atoms[3], XCB_ATOM_CARDINAL, 32, 12, 
+            (const int []) { 0, 0, BAR_HEIGHT, 0, 0, 0, 0, 0, bw, 0, 0} );
+}
+
+void
 init (void)
 {
     xcb_font_t xf;
@@ -169,6 +197,8 @@ init (void)
     xcb_create_window (c, XCB_COPY_FROM_PARENT, win, root, 0, 0, bw, bh, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, 
             scr->root_visual, XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK, 
             (const uint32_t []){ pal[0], 1, XCB_EVENT_MASK_EXPOSURE });
+    /* Set EWMH hints */
+    ewmh ();
     /* Create a temporary canvas */
     canvas = xcb_generate_id (c);
     xcb_create_pixmap (c, scr->root_depth, canvas, root, bw, BAR_HEIGHT);
