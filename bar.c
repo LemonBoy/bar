@@ -180,17 +180,20 @@ sighandle (int signal)
     if (signal == SIGINT || signal == SIGTERM) exit (0);
 }
 
-void
+int
 set_ewmh_atoms (void)
 {
-    xcb_intern_atom_cookie_t cookies[4];
-    xcb_atom_t atoms[4];
+    xcb_intern_atom_cookie_t cookies[5];
     xcb_intern_atom_reply_t *reply;
+    xcb_get_property_reply_t *reply1;
+    xcb_atom_t atoms[5];
+    int compliance_lvl;
 
     cookies[0] = xcb_intern_atom (c, 0, strlen ("_NET_WM_WINDOW_TYPE")     , "_NET_WM_WINDOW_TYPE");
     cookies[1] = xcb_intern_atom (c, 0, strlen ("_NET_WM_WINDOW_TYPE_DOCK"), "_NET_WM_WINDOW_TYPE_DOCK");
     cookies[2] = xcb_intern_atom (c, 0, strlen ("_NET_WM_DESKTOP")         , "_NET_WM_DESKTOP");
     cookies[3] = xcb_intern_atom (c, 0, strlen ("_NET_WM_STRUT_PARTIAL")   , "_NET_WM_STRUT_PARTIAL");
+    cookies[4] = xcb_intern_atom (c, 0, strlen ("_NET_SUPPORTED")          , "_NET_SUPPORTED");
 
     reply = xcb_intern_atom_reply (c, cookies[0], NULL);
     atoms[0] = reply->atom; free (reply);
@@ -200,19 +203,45 @@ set_ewmh_atoms (void)
     atoms[2] = reply->atom; free (reply);
     reply = xcb_intern_atom_reply (c, cookies[3], NULL);
     atoms[3] = reply->atom; free (reply);
+    reply = xcb_intern_atom_reply (c, cookies[4], NULL);
+    atoms[4] = reply->atom; free (reply);
 
-    /* Set the _NET_WM_WINDOW_TYPE_DOCK state */
-    xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atoms[0], XCB_ATOM_ATOM, 32, 1, &atoms[1]);
-    /* Show on every desktop */
-    xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atoms[2], XCB_ATOM_CARDINAL, 32, 1, 
-            (const unsigned []){ 0xffffffff } );
-    /* Set the window geometry */
-    xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atoms[3], XCB_ATOM_CARDINAL, 32, 12, 
+    /* Wait until the wm is spawned */
+    do {
+        reply1 = xcb_get_property_reply (c, xcb_get_property (c, 0, root, atoms[4], XCB_ATOM_ATOM, 0, -1), NULL);
+    } while (!xcb_get_property_value_length (reply1));
+
+    compliance_lvl = 0;
+
+    for (xcb_atom_t *a = xcb_get_property_value (reply1); 
+         a != xcb_get_property_value_end (reply1).data;
+         a++)
+    {
+        /* Set the _NET_WM_WINDOW_TYPE_DOCK state */
+        if (*a == atoms[0]) {
+            xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atoms[0], XCB_ATOM_ATOM, 32, 1, &atoms[1]);
+            compliance_lvl++;
+        }
+        /* Show on every desktop */
+        if (*a == atoms[2]) {
+            xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atoms[2], XCB_ATOM_CARDINAL, 32, 1, 
+                    (const unsigned []){ 0xffffffff } );
+            compliance_lvl++;
+        }
+        /* Tell the WM that this space is for the bar */
+        if (*a == atoms[3]) {
+            xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atoms[3], XCB_ATOM_CARDINAL, 32, 12, 
 #if (BAR_BOTTOM == 1)
-            (const unsigned []) { 0, 0, 0, BAR_HEIGHT, 0, 0, 0, 0, 0, 0, 0, bar_width } );
+                    (const unsigned []) { 0, 0, 0, BAR_HEIGHT, 0, 0, 0, 0, 0, 0, 0, bar_width } );
 #else
-            (const unsigned []) { 0, 0, BAR_HEIGHT, 0, 0, 0, 0, 0, bar_width, 0, 0, 0 } );
+                    (const unsigned []) { 0, 0, BAR_HEIGHT, 0, 0, 0, 0, 0, bar_width, 0, 0, 0 } );
 #endif
+            compliance_lvl++;
+        }
+    }
+
+    /* If the wm supports at least 2 NET atoms then mark as compliant */
+    return (compliance_lvl > 1);
 }
 
 void
@@ -253,10 +282,11 @@ init (void)
             0, 
 #endif
             bar_width, BAR_HEIGHT, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, scr->root_visual, 
-            XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK, 
-            (const unsigned []){ pal[0], !BAR_EWMH_DOCKING, XCB_EVENT_MASK_EXPOSURE });
+            XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, (const unsigned []){ pal[0], XCB_EVENT_MASK_EXPOSURE });
     /* Set EWMH hints */
-    set_ewmh_atoms ();
+    int ewmh_docking = set_ewmh_atoms ();
+    /* Quirk for wm not supporting the EWMH docking method */
+    xcb_change_window_attributes (c, win, XCB_CW_OVERRIDE_REDIRECT, (const unsigned []){ !ewmh_docking });
     /* Create a temporary canvas */
     canvas = xcb_generate_id (c);
     xcb_create_pixmap (c, scr->root_depth, canvas, root, bar_width, BAR_HEIGHT);
