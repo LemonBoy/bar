@@ -1,7 +1,17 @@
+/* The height of the bar (in pixels) */
 #define BAR_HEIGHT  18
+/* The thickness of the underline (in pixels) */
 #define BAR_UNDERLINE_HEIGHT 2
-#define BAR_FONT    "-*-terminus-medium-r-normal-*-12-*-*-*-c-*-*-1"
-
+/* Tell the WM to reserve the space we use.
+ * Some window managers don't respect the EWMH hints though and
+ * leave bar as a separate window. Just set this to 0 if it happens.
+ */
+#define BAR_EWMH_DOCKING 1
+/* Whether to put the bar at the screen bottom or not */
+#define BAR_BOTTOM 0
+/* The font used for the bar */
+#define BAR_FONT "-*-terminus-medium-r-normal-*-12-*-*-*-c-*-*-1"
+/* Color palette */
 #define COLOR0  0x1A1A1A /* background */
 #define COLOR1  0xA9A9A9 /* foreground */
 #define COLOR2  0x303030

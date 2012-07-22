@@ -208,7 +208,11 @@ set_ewmh_atoms (void)
             (const unsigned []){ 0xffffffff } );
     /* Set the window geometry */
     xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atoms[3], XCB_ATOM_CARDINAL, 32, 12, 
-            (const unsigned []) { 0, 0, BAR_HEIGHT, 0, 0, 0, 0, 0, bar_width, 0, 0} );
+#if (BAR_BOTTOM == 1)
+            (const unsigned []) { 0, 0, 0, BAR_HEIGHT, 0, 0, 0, 0, 0, 0, 0, bar_width } );
+#else
+            (const unsigned []) { 0, 0, BAR_HEIGHT, 0, 0, 0, 0, 0, bar_width, 0, 0, 0 } );
+#endif
 }
 
 void
@@ -242,10 +246,15 @@ init (void)
     free (font_info);
     /* Create the main window */
     win = xcb_generate_id (c);
-    xcb_create_window (c, XCB_COPY_FROM_PARENT, win, root, 0, 0, bar_width, BAR_HEIGHT, 
-            0, XCB_WINDOW_CLASS_INPUT_OUTPUT, scr->root_visual, 
+    xcb_create_window (c, XCB_COPY_FROM_PARENT, win, root, 0, 
+#if (BAR_BOTTOM == 1)
+            scr->height_in_pixels - BAR_HEIGHT,
+#else
+            0, 
+#endif
+            bar_width, BAR_HEIGHT, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, scr->root_visual, 
             XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK, 
-            (const unsigned []){ pal[0], 1, XCB_EVENT_MASK_EXPOSURE });
+            (const unsigned []){ pal[0], !BAR_EWMH_DOCKING, XCB_EVENT_MASK_EXPOSURE });
     /* Set EWMH hints */
     set_ewmh_atoms ();
     /* Create a temporary canvas */
