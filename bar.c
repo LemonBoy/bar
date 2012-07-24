@@ -360,14 +360,22 @@ init (void)
 void
 cleanup (void)
 {
-    xcb_close_font (c, fontset[FONT_MAIN].xcb_ft);
-    xcb_close_font (c, fontset[FONT_FALLBACK].xcb_ft);
-    xcb_free_pixmap (c, canvas);
-    xcb_destroy_window (c, win);
-    xcb_free_gc (c, draw_gc);
-    xcb_free_gc (c, clear_gc);
-    xcb_free_gc (c, underl_gc);
-    xcb_disconnect (c);
+    if (fontset[FONT_MAIN].xcb_ft)
+        xcb_close_font (c, fontset[FONT_MAIN].xcb_ft);
+    if (fontset[FONT_FALLBACK].xcb_ft)
+        xcb_close_font (c, fontset[FONT_FALLBACK].xcb_ft);
+    if (canvas)
+        xcb_free_pixmap (c, canvas);
+    if (win)
+        xcb_destroy_window (c, win);
+    if (draw_gc)
+        xcb_free_gc (c, draw_gc);
+    if (clear_gc)
+        xcb_free_gc (c, clear_gc);
+    if (underl_gc)
+        xcb_free_gc (c, underl_gc);
+    if (c)
+        xcb_disconnect (c);
 }
 
 void
@@ -405,10 +413,10 @@ main (int argc, char **argv)
         }
     }
 
+    atexit (cleanup);
     signal (SIGINT, sighandle);
     signal (SIGTERM, sighandle);
     init ();
-    atexit (cleanup);
 
     /* Get the fd to Xserver */
     pollin[1].fd = xcb_get_file_descriptor (c);
