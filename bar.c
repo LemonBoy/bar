@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,6 +30,12 @@ enum {
     FONT_MAX
 };
 
+enum {
+    ALIGN_L = 0,
+    ALIGN_C,
+    ALIGN_R
+};
+
 static xcb_connection_t *c;
 static xcb_window_t     win;
 static xcb_drawable_t   canvas;
@@ -36,6 +43,7 @@ static xcb_gcontext_t   draw_gc;
 static xcb_gcontext_t   clear_gc;
 static xcb_gcontext_t   underl_gc;
 static int              bar_width;
+static bool             bar_bottom;
 static fontset_item_t   fontset[FONT_MAX]; 
 static fontset_item_t   *sel_font = &fontset[FONT_MAIN];
 
@@ -52,13 +60,13 @@ xcb_set_bg (int i)
 void
 xcb_set_fg (int i)
 {
-    xcb_change_gc (c, draw_gc , XCB_GC_FOREGROUND, (const unsigned []){ palette[i] });
+    xcb_change_gc (c, draw_gc , XCB_GC_FOREGROUND, (const uint32_t []){ palette[i] });
 }
 
 void
 xcb_set_ud (int i)
 {
-    xcb_change_gc (c, underl_gc, XCB_GC_FOREGROUND, (const unsigned []){ palette[i] });
+    xcb_change_gc (c, underl_gc, XCB_GC_FOREGROUND, (const uint32_t []){ palette[i] });
 }
 
 void
@@ -71,19 +79,19 @@ void
 xcb_set_fontset (int i)
 {
     sel_font = &fontset[i&1];
-    xcb_change_gc (c, draw_gc , XCB_GC_FONT, (const unsigned []){ sel_font->xcb_ft });
+    xcb_change_gc (c, draw_gc , XCB_GC_FONT, (const uint32_t []){ sel_font->xcb_ft });
 }
 
 int
 draw_char (int x, int align, wchar_t ch)
 {
     switch (align) {
-        case 1:
+        case ALIGN_C:
             xcb_copy_area (c, canvas, canvas, draw_gc, bar_width / 2 - x / 2, 0, 
                     bar_width / 2 - (x + sel_font->width) / 2, 0, x, BAR_HEIGHT);
             x = bar_width / 2 - (x + sel_font->width) / 2 + x;
             break;
-        case 2:
+        case ALIGN_R:
             xcb_copy_area (c, canvas, canvas, draw_gc, bar_width - x, 0, 
                     bar_width - x - sel_font->width, 0, x, BAR_HEIGHT);
             x = bar_width - sel_font->width; 
@@ -139,15 +147,15 @@ parse (char *text)
                         break;
 
                     case 'l': 
-                        align = 0; 
+                        align = ALIGN_L; 
                         pos_x = 0; 
                         break;
                     case 'c': 
-                        align = 1; 
+                        align = ALIGN_C; 
                         pos_x = 0; 
                         break;
                     case 'r': 
-                        align = 2; 
+                        align = ALIGN_R; 
                         pos_x = 0; 
                         break;
                 }
@@ -231,6 +239,7 @@ set_ewmh_atoms (xcb_window_t root)
     xcb_get_property_reply_t *reply1;
     xcb_atom_t atoms[5];
     int compliance_lvl;
+    uint32_t v[12] = {0};
 
     cookies[0] = xcb_intern_atom (c, 0, strlen ("_NET_WM_WINDOW_TYPE")     , "_NET_WM_WINDOW_TYPE");
     cookies[1] = xcb_intern_atom (c, 0, strlen ("_NET_WM_WINDOW_TYPE_DOCK"), "_NET_WM_WINDOW_TYPE_DOCK");
@@ -267,17 +276,20 @@ set_ewmh_atoms (xcb_window_t root)
         /* Show on every desktop */
         if (*a == atoms[2]) {
             xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atoms[2], XCB_ATOM_CARDINAL, 32, 1, 
-                    (const unsigned []){ 0xffffffff } );
+                    (const uint32_t []){ 0xffffffff } );
             compliance_lvl++;
         }
         /* Tell the WM that this space is for the bar */
         if (*a == atoms[3]) {
-            xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atoms[3], XCB_ATOM_CARDINAL, 32, 12, 
-#if (BAR_BOTTOM == 1)
-                    (const unsigned []) { 0, 0, 0, BAR_HEIGHT, 0, 0, 0, 0, 0, 0, 0, bar_width } );
-#else
-                    (const unsigned []) { 0, 0, BAR_HEIGHT, 0, 0, 0, 0, 0, bar_width, 0, 0, 0 } );
-#endif
+            if (bar_bottom) {
+                v[3]  = BAR_HEIGHT;
+                v[11] = bar_width;
+            }
+            else {
+                v[2] = BAR_HEIGHT;
+                v[8] = bar_width;
+            }
+            xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atoms[3], XCB_ATOM_CARDINAL, 32, 12, v);
             compliance_lvl++;
         }
     }
@@ -292,6 +304,7 @@ init (void)
 {
     xcb_screen_t *scr;
     xcb_window_t root;
+    int y;
 
     /* Connect to X */
     c = xcb_connect (NULL, NULL);
@@ -311,20 +324,19 @@ init (void)
 
     /* Create the main window */
     win = xcb_generate_id (c);
-    xcb_create_window (c, XCB_COPY_FROM_PARENT, win, root, 0, 
-#if (BAR_BOTTOM == 1)
-            scr->height_in_pixels - BAR_HEIGHT,
-#else
-            0, 
-#endif
+    if (bar_bottom)
+        y = scr->height_in_pixels - BAR_HEIGHT;
+    else
+        y = 0;
+    xcb_create_window (c, XCB_COPY_FROM_PARENT, win, root, 0, y,
             bar_width, BAR_HEIGHT, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, scr->root_visual, 
-            XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, (const unsigned []){ palette[0], XCB_EVENT_MASK_EXPOSURE });
+            XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, (const uint32_t []){ palette[0], XCB_EVENT_MASK_EXPOSURE });
 
     /* Set EWMH hints */
     int ewmh_docking = set_ewmh_atoms (root);
 
     /* Quirk for wm not supporting the EWMH docking method */
-    xcb_change_window_attributes (c, win, XCB_CW_OVERRIDE_REDIRECT, (const unsigned []){ !ewmh_docking });
+    xcb_change_window_attributes (c, win, XCB_CW_OVERRIDE_REDIRECT, (const uint32_t []){ !ewmh_docking });
 
     /* Create a temporary canvas */
     canvas = xcb_generate_id (c);
@@ -332,13 +344,13 @@ init (void)
 
     /* Create the gc for drawing */
     draw_gc = xcb_generate_id (c);
-    xcb_create_gc (c, draw_gc, root, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND, (const unsigned []){ palette[1], palette[0] });
+    xcb_create_gc (c, draw_gc, root, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND, (const uint32_t []){ palette[1], palette[0] });
 
     clear_gc = xcb_generate_id (c);
-    xcb_create_gc (c, clear_gc, root, XCB_GC_FOREGROUND, (const unsigned []){ palette[0] });
+    xcb_create_gc (c, clear_gc, root, XCB_GC_FOREGROUND, (const uint32_t []){ palette[0] });
 
     underl_gc = xcb_generate_id (c);
-    xcb_create_gc (c, underl_gc, root, XCB_GC_FOREGROUND, (const unsigned []){ palette[0] });
+    xcb_create_gc (c, underl_gc, root, XCB_GC_FOREGROUND, (const uint32_t []){ palette[0] });
 
     /* Make the bar visible */
     xcb_map_window (c, win);
@@ -348,14 +360,22 @@ init (void)
 void
 cleanup (void)
 {
-    xcb_close_font (c, fontset[FONT_MAIN].xcb_ft);
-    xcb_close_font (c, fontset[FONT_FALLBACK].xcb_ft);
-    xcb_free_pixmap (c, canvas);
-    xcb_destroy_window (c, win);
-    xcb_free_gc (c, draw_gc);
-    xcb_free_gc (c, clear_gc);
-    xcb_free_gc (c, underl_gc);
-    xcb_disconnect (c);
+    if (fontset[FONT_MAIN].xcb_ft)
+        xcb_close_font (c, fontset[FONT_MAIN].xcb_ft);
+    if (fontset[FONT_FALLBACK].xcb_ft)
+        xcb_close_font (c, fontset[FONT_FALLBACK].xcb_ft);
+    if (canvas)
+        xcb_free_pixmap (c, canvas);
+    if (win)
+        xcb_destroy_window (c, win);
+    if (draw_gc)
+        xcb_free_gc (c, draw_gc);
+    if (clear_gc)
+        xcb_free_gc (c, clear_gc);
+    if (underl_gc)
+        xcb_free_gc (c, underl_gc);
+    if (c)
+        xcb_disconnect (c);
 }
 
 void
@@ -380,14 +400,16 @@ main (int argc, char **argv)
     int permanent = 0;
 
     char ch;
-    while ((ch = getopt (argc, argv, "ph")) != -1) {
+    while ((ch = getopt (argc, argv, "phb")) != -1) {
         switch (ch) {
             case 'h': 
-                printf ("usage: %s [-p | -h]\n"
-                        "\t-h Shows this help\n"
+                printf ("usage: %s [-p | -h] [-b]\n"
+                        "\t-h Show this help\n"
+                        "\t-b Put bar at the bottom of the screen\n"
                         "\t-p Don't close after the data ends\n", argv[0]); 
                 exit (0);
             case 'p': permanent = 1; break;
+            case 'b': bar_bottom = 1; break;
         }
     }
 
@@ -404,7 +426,7 @@ main (int argc, char **argv)
     for (;;) {
         int redraw = 0;
 
-        if (poll ((struct pollfd *)&pollin, 2, -1) > 0) {
+        if (poll (pollin, 2, -1) > 0) {
             if (pollin[0].revents & POLLHUP) {      /* No more data... */
                 if (permanent) pollin[0].fd = -1;   /* ...null the fd and continue polling :D */
                 else           break;               /* ...bail out */
