@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,6 +37,7 @@ static xcb_gcontext_t   draw_gc;
 static xcb_gcontext_t   clear_gc;
 static xcb_gcontext_t   underl_gc;
 static int              bar_width;
+static bool             bar_bottom;
 static fontset_item_t   fontset[FONT_MAX]; 
 static fontset_item_t   *sel_font = &fontset[FONT_MAIN];
 
@@ -231,6 +233,7 @@ set_ewmh_atoms (xcb_window_t root)
     xcb_get_property_reply_t *reply1;
     xcb_atom_t atoms[5];
     int compliance_lvl;
+    unsigned int v[12] = {0};
 
     cookies[0] = xcb_intern_atom (c, 0, strlen ("_NET_WM_WINDOW_TYPE")     , "_NET_WM_WINDOW_TYPE");
     cookies[1] = xcb_intern_atom (c, 0, strlen ("_NET_WM_WINDOW_TYPE_DOCK"), "_NET_WM_WINDOW_TYPE_DOCK");
@@ -272,12 +275,15 @@ set_ewmh_atoms (xcb_window_t root)
         }
         /* Tell the WM that this space is for the bar */
         if (*a == atoms[3]) {
-            xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atoms[3], XCB_ATOM_CARDINAL, 32, 12, 
-#if (BAR_BOTTOM == 1)
-                    (const unsigned []) { 0, 0, 0, BAR_HEIGHT, 0, 0, 0, 0, 0, 0, 0, bar_width } );
-#else
-                    (const unsigned []) { 0, 0, BAR_HEIGHT, 0, 0, 0, 0, 0, bar_width, 0, 0, 0 } );
-#endif
+            if (bar_bottom) {
+                v[3]  = BAR_HEIGHT;
+                v[11] = bar_width;
+            }
+            else {
+                v[2] = BAR_HEIGHT;
+                v[8] = bar_width;
+            }
+            xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atoms[3], XCB_ATOM_CARDINAL, 32, 12, v);
             compliance_lvl++;
         }
     }
@@ -292,6 +298,7 @@ init (void)
 {
     xcb_screen_t *scr;
     xcb_window_t root;
+    int y;
 
     /* Connect to X */
     c = xcb_connect (NULL, NULL);
@@ -311,12 +318,11 @@ init (void)
 
     /* Create the main window */
     win = xcb_generate_id (c);
-    xcb_create_window (c, XCB_COPY_FROM_PARENT, win, root, 0, 
-#if (BAR_BOTTOM == 1)
-            scr->height_in_pixels - BAR_HEIGHT,
-#else
-            0, 
-#endif
+    if (bar_bottom)
+        y = scr->height_in_pixels - BAR_HEIGHT;
+    else
+        y = 0;
+    xcb_create_window (c, XCB_COPY_FROM_PARENT, win, root, 0, y,
             bar_width, BAR_HEIGHT, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, scr->root_visual, 
             XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, (const unsigned []){ palette[0], XCB_EVENT_MASK_EXPOSURE });
 
@@ -380,14 +386,16 @@ main (int argc, char **argv)
     int permanent = 0;
 
     char ch;
-    while ((ch = getopt (argc, argv, "ph")) != -1) {
+    while ((ch = getopt (argc, argv, "phb")) != -1) {
         switch (ch) {
             case 'h': 
-                printf ("usage: %s [-p | -h]\n"
-                        "\t-h Shows this help\n"
+                printf ("usage: %s [-p | -h] [-b]\n"
+                        "\t-h Show this help\n"
+                        "\t-b Put bar at the bottom of the screen\n"
                         "\t-p Don't close after the data ends\n", argv[0]); 
                 exit (0);
             case 'p': permanent = 1; break;
+            case 'b': bar_bottom = 1; break;
         }
     }
 

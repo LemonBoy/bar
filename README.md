@@ -11,8 +11,9 @@ Options
 bar accepts a couple of command line switches.
 
 ```
--h      Shows the help and bails out.
+-h      Show the help and bail out.
 -p      Make the bar permanent.
+-b      Show the bar at the bottom of the screen.
 ```
 
 Configuration

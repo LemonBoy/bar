@@ -2,8 +2,6 @@
 #define BAR_HEIGHT  18
 /* The thickness of the underline (in pixels) */
 #define BAR_UNDERLINE_HEIGHT 2
-/* Whether to put the bar at the screen bottom or not */
-#define BAR_BOTTOM 0
 /* The font used for the bar */
 #define BAR_MAIN_FONT       "-*-terminus-medium-r-normal-*-12-*-*-*-c-*-*-1"
 #define BAR_FALLBACK_FONT   "fixed"
