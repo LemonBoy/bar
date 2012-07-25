@@ -102,16 +102,16 @@ draw_char (int x, int align, wchar_t ch)
     /* Draw the background first */
     xcb_fill_rect (clear_gc, x, 0, ch_width, BAR_HEIGHT);
 
-    /* Draw the underline */
-    if (BAR_UNDERLINE_HEIGHT) 
-        xcb_fill_rect (underl_gc, x, BAR_UNDERLINE*(BAR_HEIGHT-BAR_UNDERLINE_HEIGHT), ch_width, BAR_UNDERLINE_HEIGHT);
-
     /* xcb accepts string in UCS-2 BE, so swap */
     ch = (ch >> 8) | (ch << 8);
 
     /* String baseline coordinates */
     xcb_image_text_16 (c, 1, canvas, draw_gc, x, BAR_HEIGHT / 2 + sel_font->avg_height / 2 - sel_font->info->font_descent, 
             (xcb_char2b_t *)&ch);
+
+    /* Draw the underline */
+    if (BAR_UNDERLINE_HEIGHT) 
+        xcb_fill_rect (underl_gc, x, BAR_UNDERLINE*(BAR_HEIGHT-BAR_UNDERLINE_HEIGHT), ch_width, BAR_UNDERLINE_HEIGHT);
 
     return ch_width;
 }
