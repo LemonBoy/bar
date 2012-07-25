@@ -249,11 +249,11 @@ set_ewmh_atoms (xcb_window_t root)
     reply = xcb_intern_atom_reply (c, cookies[4], NULL);
     atoms[4] = reply->atom; free (reply);
 
-    do {
-        reply1 = xcb_get_property_reply (c, xcb_get_property (c, 0, root, atoms[4], XCB_ATOM_ATOM, 0, -1), NULL);
-    } while (!xcb_get_property_value_length (reply1));
-
     compliance_lvl = 0;
+
+    reply1 = xcb_get_property_reply (c, xcb_get_property (c, 0, root, atoms[4], XCB_ATOM_ATOM, 0, -1), NULL);
+    if (!reply)
+        return compliance_lvl;
 
     for (xcb_atom_t *a = xcb_get_property_value (reply1); 
          a && a != xcb_get_property_value_end (reply1).data;
