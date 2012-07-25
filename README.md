@@ -3,8 +3,8 @@ b(ar) a(in't) r(ecursive)
 2012 (C) The Lemon Man
 
 A lightweight bar based on XCB (yay). Provides foreground/background color
-switching along with text alignment (screw you dzen!), nothing less and 
-nothing more.
+switching along with text alignment (screw you dzen!), full utf8 support
+and reduced memory footprint. Nothing less and nothing more.
 
 Options
 -------

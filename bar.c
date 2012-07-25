@@ -15,12 +15,12 @@
 #define MAX(a,b) ((a > b) ? a : b)
 
 typedef struct fontset_item_t {
-    xcb_font_t xcb_ft;
-    int height;
-    int width;
-    int descent;
-    unsigned short char_max;
-    unsigned short char_min;
+    xcb_font_t              xcb_ft;
+    xcb_query_font_reply_t *info;
+    xcb_charinfo_t         *table;
+    int                     avg_height;
+    unsigned short          char_max;
+    unsigned short          char_min;
 } fontset_item_t;
 
 enum {
@@ -77,34 +77,43 @@ xcb_set_fontset (int i)
 int
 draw_char (int x, int align, wchar_t ch)
 {
+    int ch_width;
+
+    ch_width = (ch > sel_font->char_min && ch < sel_font->char_max) ?
+        sel_font->table[ch - sel_font->char_min].character_width    :
+        0;
+
+    if (ch_width == 0)
+        return 0;
+
     switch (align) {
         case 1:
             xcb_copy_area (c, canvas, canvas, draw_gc, bar_width / 2 - x / 2, 0, 
-                    bar_width / 2 - (x + sel_font->width) / 2, 0, x, BAR_HEIGHT);
-            x = bar_width / 2 - (x + sel_font->width) / 2 + x;
+                    bar_width / 2 - (x + ch_width) / 2, 0, x, BAR_HEIGHT);
+            x = bar_width / 2 - (x + ch_width) / 2 + x;
             break;
         case 2:
             xcb_copy_area (c, canvas, canvas, draw_gc, bar_width - x, 0, 
-                    bar_width - x - sel_font->width, 0, x, BAR_HEIGHT);
-            x = bar_width - sel_font->width; 
+                    bar_width - x - ch_width, 0, x, BAR_HEIGHT);
+            x = bar_width - ch_width; 
             break;
     }
 
     /* Draw the background first */
-    xcb_fill_rect (clear_gc, x, 0, sel_font->width, BAR_HEIGHT);
+    xcb_fill_rect (clear_gc, x, 0, ch_width, BAR_HEIGHT);
 
     /* Draw the underline */
     if (BAR_UNDERLINE_HEIGHT) 
-        xcb_fill_rect (underl_gc, x, BAR_HEIGHT-BAR_UNDERLINE_HEIGHT, sel_font->width, BAR_UNDERLINE_HEIGHT);
+        xcb_fill_rect (underl_gc, x, BAR_HEIGHT-BAR_UNDERLINE_HEIGHT, ch_width, BAR_UNDERLINE_HEIGHT);
 
     /* xcb accepts string in UCS-2 BE, so swap */
     ch = (ch >> 8) | (ch << 8);
 
     /* String baseline coordinates */
-    xcb_image_text_16 (c, 1, canvas, draw_gc, x, BAR_HEIGHT / 2 + sel_font->height / 2 - sel_font->descent, 
+    xcb_image_text_16 (c, 1, canvas, draw_gc, x, BAR_HEIGHT / 2 + sel_font->avg_height / 2 - sel_font->info->font_descent, 
             (xcb_char2b_t *)&ch);
 
-    return sel_font->width;
+    return ch_width;
 }
 
 void
@@ -206,19 +215,17 @@ font_load (const char **font_list)
         font_info = xcb_query_font_reply (c, queryreq, NULL);
 
         fontset[i].xcb_ft  = font;
-        fontset[i].width   = font_info->max_bounds.character_width;
-        fontset[i].descent = font_info->font_descent;
+        fontset[i].table   = xcb_query_font_char_infos (font_info);
+        fontset[i].info    = font_info;
         fontset[i].char_max= font_info->max_byte1 << 8 | font_info->max_char_or_byte2;
         fontset[i].char_min= font_info->min_byte1 << 8 | font_info->min_char_or_byte2;
 
         max_height = MAX(font_info->font_ascent + font_info->font_descent, max_height);
-
-        free (font_info);
     }
 
     /* To have an uniform alignment */
     for (int i = 0; i < FONT_MAX; i++)
-        fontset[i].height = max_height;
+        fontset[i].avg_height = max_height;
 
     return 0;
 }
@@ -306,7 +313,7 @@ init (void)
     root = scr->root;
 
     /* Load the font */
-    if (font_load ((const char* []){ BAR_MAIN_FONT, BAR_FALLBACK_FONT }))
+    if (font_load ((const char* []){ BAR_FONT }))
         exit (1);
 
     /* Create the main window */
@@ -348,8 +355,10 @@ init (void)
 void
 cleanup (void)
 {
-    xcb_close_font (c, fontset[FONT_MAIN].xcb_ft);
-    xcb_close_font (c, fontset[FONT_FALLBACK].xcb_ft);
+    for (int i = 0; i < FONT_MAX; i++) {
+        free (fontset[i].info);
+        xcb_close_font (c, fontset[i].xcb_ft);
+    }
     xcb_free_pixmap (c, canvas);
     xcb_destroy_window (c, win);
     xcb_free_gc (c, draw_gc);
