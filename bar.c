@@ -46,7 +46,6 @@ xcb_set_bg (int i)
 {
     xcb_change_gc (c, draw_gc  , XCB_GC_BACKGROUND, (const unsigned []){ palette[i] });
     xcb_change_gc (c, clear_gc , XCB_GC_FOREGROUND, (const unsigned []){ palette[i] });
-    xcb_change_gc (c, underl_gc, XCB_GC_FOREGROUND, (const unsigned []){ palette[i] });
 }
 
 void
@@ -82,6 +81,7 @@ draw_char (int x, int align, wchar_t ch)
     ch_width = (ch > sel_font->char_min && ch < sel_font->char_max) ?
         sel_font->table[ch - sel_font->char_min].character_width    :
         0;
+
 
     if (ch_width == 0)
         return 0;
