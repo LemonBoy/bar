@@ -1,6 +1,8 @@
 /* The height of the bar (in pixels) */
 #define BAR_HEIGHT  18
-/* The thickness of the underline (in pixels) */
+/* Choose between an underline or an overline */
+#define BAR_UNDERLINE 1
+/* The thickness of the underline (in pixels). Set to 0 to disable. */
 #define BAR_UNDERLINE_HEIGHT 2
 /* Whether to put the bar at the screen bottom or not */
 #define BAR_BOTTOM 0
