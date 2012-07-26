@@ -43,7 +43,7 @@ static xcb_gcontext_t   draw_gc;
 static xcb_gcontext_t   clear_gc;
 static xcb_gcontext_t   underl_gc;
 static int              bar_width;
-static bool             bar_bottom;
+static int              bar_bottom;
 static fontset_item_t   fontset[FONT_MAX]; 
 static fontset_item_t   *sel_font = &fontset[FONT_MAIN];
 
@@ -398,6 +398,7 @@ main (int argc, char **argv)
     xcb_expose_event_t *expose_ev;
 
     int permanent = 0;
+    bar_bottom = 0;
 
     char ch;
     while ((ch = getopt (argc, argv, "phb")) != -1) {
