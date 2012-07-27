@@ -42,7 +42,7 @@ To draw a backslash just backslash escape it (\\\\).
 f<0-9>  Selects the text foreground color from the palette.
 b<0-9>  Selects the text background color from the palette.
 u<0-9>  Selects the underline color from the palette.
-        To reset the bg/fg color just pass 'r' as color index.
+        To reset the bg/fg/underline color just pass 'r' as color index.
 
 l       Aligns the text to the left.
 c       Aligns the text to the center.
