@@ -3,8 +3,8 @@ b(ar) a(in't) r(ecursive)
 2012 (C) The Lemon Man
 
 A lightweight bar based on XCB (yay). Provides foreground/background color
-switching along with text alignment (screw you dzen!), nothing less and 
-nothing more.
+switching along with text alignment (screw you dzen!), full utf8 support
+and reduced memory footprint. Nothing less and nothing more.
 
 Options
 -------
@@ -43,7 +43,7 @@ To draw a backslash just backslash escape it (\\\\).
 f<0-9>  Selects the text foreground color from the palette.
 b<0-9>  Selects the text background color from the palette.
 u<0-9>  Selects the underline color from the palette.
-        To reset the bg/fg color just pass 'r' as color index.
+        To reset the bg/fg/underline color just pass 'r' as the color index.
 
 l       Aligns the text to the left.
 c       Aligns the text to the center.
