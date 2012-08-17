@@ -43,7 +43,7 @@ static xcb_gcontext_t   draw_gc;
 static xcb_gcontext_t   clear_gc;
 static xcb_gcontext_t   underl_gc;
 static int              bar_width;
-static int              bar_bottom;
+static int              bar_bottom = BAR_BOTTOM;
 static fontset_item_t   fontset[FONT_MAX]; 
 static fontset_item_t   *sel_font = &fontset[FONT_MAIN];
 
