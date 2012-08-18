@@ -3,7 +3,7 @@
 /* The width of the bar. Set to -1 to fit screen */
 #define BAR_WIDTH   -1
 /* Offset from the left. Set to 0 to have no effect */
-#define OFFSET 0
+#define BAR_OFFSET 0
 /* Choose between an underline or an overline */
 #define BAR_UNDERLINE 1
 /* The thickness of the underline (in pixels). Set to 0 to disable. */

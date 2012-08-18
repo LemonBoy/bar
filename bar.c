@@ -326,7 +326,7 @@ init (void)
 
     /* where to place the window */
     y = (bar_bottom) ? (scr->height_in_pixels - BAR_HEIGHT) : 0;
-    bar_width = (BAR_WIDTH < 0) ? (scr->width_in_pixels - OFFSET) : BAR_WIDTH;
+    bar_width = (BAR_WIDTH < 0) ? (scr->width_in_pixels - BAR_OFFSET) : BAR_WIDTH;
 
     /* Load the font */
     if (font_load ((const char* []){ BAR_FONT }))
@@ -334,7 +334,7 @@ init (void)
 
     /* Create the main window */
     win = xcb_generate_id (c);
-    xcb_create_window (c, XCB_COPY_FROM_PARENT, win, root, OFFSET, y, bar_width,
+    xcb_create_window (c, XCB_COPY_FROM_PARENT, win, root, BAR_OFFSET, y, bar_width,
             BAR_HEIGHT, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, scr->root_visual,
             XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, (const uint32_t []){ palette[0], XCB_EVENT_MASK_EXPOSURE });
 
