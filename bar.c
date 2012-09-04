@@ -407,7 +407,6 @@ main (int argc, char **argv)
     xcb_expose_event_t *expose_ev;
 
     int permanent = 0;
-    bar_bottom = 0;
 
     char ch;
     while ((ch = getopt (argc, argv, "phb")) != -1) {
