@@ -38,4 +38,8 @@ install: bar
 	test -d ${DESTDIR}${BINDIR} || mkdir -p ${DESTDIR}${BINDIR}
 	install -m755 bar ${DESTDIR}${BINDIR}/bar
 
+uninstall:
+	@echo removing executable file from ${DESTDIR}${BINDIR}
+	rm -f ${DESTDIR}${BINDIR}/bar
+
 .PHONY: all debug clean install
