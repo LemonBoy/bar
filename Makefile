@@ -39,7 +39,6 @@ install: bar
 	install -m755 bar ${DESTDIR}${BINDIR}/bar
 
 uninstall:
-	@echo removing executable file from ${DESTDIR}${BINDIR}
 	rm -f ${DESTDIR}${BINDIR}/bar
 
 .PHONY: all debug clean install
