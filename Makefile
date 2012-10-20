@@ -9,7 +9,7 @@ EXEC = bar
 SRCS = bar.c
 OBJS = ${SRCS:.c=.o}
 
-PREFIX?=/usr/local
+PREFIX?=/usr
 BINDIR=${PREFIX}/bin
 
 all: ${EXEC}
