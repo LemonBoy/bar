@@ -90,9 +90,9 @@ draw_char (int x, int align, wchar_t ch)
         sel_font->table[ch - sel_font->char_min].character_width    :
         0;
 
-
+    /* Some fonts (such as anorexia) have the space char with the width set to 0 */
     if (ch_width == 0)
-        return 0;
+        ch_width = BAR_FONT_FALLBACK_WIDTH;
 
     switch (align) {
         case ALIGN_C:
@@ -360,6 +360,9 @@ init (void)
 
     /* Make the bar visible */
     xcb_map_window (c, win);
+    /* Send a configure event. Needed to make bar work with Openbox */
+    xcb_configure_window (c, win, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, (const uint32_t []){ BAR_OFFSET, y });
+
     xcb_flush (c);
 }
 
