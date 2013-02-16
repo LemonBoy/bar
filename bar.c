@@ -49,36 +49,38 @@ static fontset_item_t   *sel_font = &fontset[FONT_MAIN];
 
 static const unsigned   palette[] = {COLOR0,COLOR1,COLOR2,COLOR3,COLOR4,COLOR5,COLOR6,COLOR7,COLOR8,COLOR9};
 
-void
+static inline void
 xcb_set_bg (int i)
 {
     xcb_change_gc (c, draw_gc  , XCB_GC_BACKGROUND, (const unsigned []){ palette[i] });
     xcb_change_gc (c, clear_gc , XCB_GC_FOREGROUND, (const unsigned []){ palette[i] });
 }
 
-void
+static inline void
 xcb_set_fg (int i)
 {
     xcb_change_gc (c, draw_gc , XCB_GC_FOREGROUND, (const uint32_t []){ palette[i] });
 }
 
-void
+static inline void
 xcb_set_ud (int i)
 {
     xcb_change_gc (c, underl_gc, XCB_GC_FOREGROUND, (const uint32_t []){ palette[i] });
 }
 
-void
+static inline void
 xcb_fill_rect (xcb_gcontext_t gc, int x, int y, int width, int height)
 {
     xcb_poly_fill_rectangle (c, canvas, gc, 1, (const xcb_rectangle_t []){ { x, y, width, height } });
 }
 
-void
+static inline void
 xcb_set_fontset (int i)
 {
-    sel_font = &fontset[i&1];
-    xcb_change_gc (c, draw_gc , XCB_GC_FONT, (const uint32_t []){ sel_font->xcb_ft });
+    if (sel_font != &fontset[i]) {
+        sel_font = &fontset[i];
+        xcb_change_gc (c, draw_gc , XCB_GC_FONT, (const uint32_t []){ sel_font->xcb_ft });
+    }
 }
 
 int
@@ -127,7 +129,7 @@ draw_char (int x, int align, wchar_t ch)
 void
 parse (char *text)
 {
-    unsigned char *p = text;
+    char *p = text;
 
     int pos_x = 0;
     int align = 0;
@@ -176,11 +178,11 @@ parse (char *text)
                 p += 1;
             }
             else if ((p[0] & 0xe0) == 0xc0 && (p[1] & 0xc0) == 0x80) {
-                t  = (p[0] & 0x1f) << 6 | p[1] & 0x3f;
+                t  = (p[0] & 0x1f) << 6 | (p[1] & 0x3f);
                 p += 2;
             }
             else if ((p[0] & 0xf0) == 0xe0 && (p[1] & 0xc0) == 0x80 && (p[2] & 0xc0) == 0x80) {
-                t  = (p[0] & 0xf) << 12 | (p[1] & 0x3f) << 6 | p[2] & 0x3f;
+                t  = (p[0] & 0xf) << 12 | (p[1] & 0x3f) << 6 | (p[2] & 0x3f);
                 p += 3;
             }
             else { /* ASCII chars > 127 go in the extended latin range */
