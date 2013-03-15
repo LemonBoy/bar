@@ -45,7 +45,7 @@ static xcb_gcontext_t   underl_gc;
 static int              bar_width;
 static int              bar_bottom = BAR_BOTTOM;
 static fontset_item_t   fontset[FONT_MAX]; 
-static fontset_item_t   *sel_font = &fontset[FONT_MAIN];
+static fontset_item_t   *sel_font = NULL;
 
 static const unsigned   palette[] = {COLOR0,COLOR1,COLOR2,COLOR3,COLOR4,COLOR5,COLOR6,COLOR7,COLOR8,COLOR9};
 
