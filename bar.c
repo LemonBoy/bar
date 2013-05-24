@@ -16,12 +16,12 @@
 #define MAX(a,b) ((a > b) ? a : b)
 
 typedef struct fontset_item_t {
-    xcb_font_t              xcb_ft;
-    xcb_query_font_reply_t *info;
-    xcb_charinfo_t         *table;
-    int                     avg_height;
-    unsigned short          char_max;
-    unsigned short          char_min;
+    xcb_font_t      xcb_ft;
+    xcb_charinfo_t *table;
+    int             descent;
+    int             avg_height;
+    unsigned short  char_max;
+    unsigned short  char_min;
 } fontset_item_t;
 
 enum {
@@ -116,7 +116,7 @@ draw_char (int x, int align, wchar_t ch)
     ch = (ch >> 8) | (ch << 8);
 
     /* String baseline coordinates */
-    xcb_image_text_16 (c, 1, canvas, draw_gc, x, BAR_HEIGHT / 2 + sel_font->avg_height / 2 - sel_font->info->font_descent, 
+    xcb_image_text_16 (c, 1, canvas, draw_gc, x, BAR_HEIGHT / 2 + sel_font->avg_height / 2 - sel_font->descent, 
             (xcb_char2b_t *)&ch);
 
     /* Draw the underline */
@@ -226,7 +226,7 @@ font_load (const char **font_list)
 
         fontset[i].xcb_ft  = font;
         fontset[i].table   = xcb_query_font_char_infos (font_info);
-        fontset[i].info    = font_info;
+        fontset[i].descent = font_info->font_descent;
         fontset[i].char_max= font_info->max_byte1 << 8 | font_info->max_char_or_byte2;
         fontset[i].char_min= font_info->min_byte1 << 8 | font_info->min_char_or_byte2;
 
@@ -373,8 +373,6 @@ cleanup (void)
 {
     int i;
     for (i = 0; i < FONT_MAX; i++) {
-        if (fontset[i].info)
-            free (fontset[i].info);
         if (fontset[i].xcb_ft)
             xcb_close_font (c, fontset[i].xcb_ft);
     }
