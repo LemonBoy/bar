@@ -24,7 +24,7 @@ config.h:
 	@cp config.def.h $@
 
 ${EXEC}: ${OBJS}
-	${CC} ${LDFLAGS} -o ${EXEC} ${OBJS}
+	${CC} -o ${EXEC} ${OBJS} ${LDFLAGS}
 	${STRIP} -s ${EXEC}
 
 debug: ${EXEC}
