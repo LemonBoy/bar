@@ -47,7 +47,7 @@ static int              bar_bottom = BAR_BOTTOM;
 static fontset_item_t   fontset[FONT_MAX]; 
 static fontset_item_t   *sel_font = NULL;
 
-static const unsigned   palette[] = {COLOR0,COLOR1,COLOR2,COLOR3,COLOR4,COLOR5,COLOR6,COLOR7,COLOR8,COLOR9};
+static const unsigned   palette[] = {COLOR0,COLOR1,COLOR2,COLOR3,COLOR4,COLOR5,COLOR6,COLOR7,COLOR8,COLOR9,BACKGROUND,FOREGROUND};
 
 static inline void
 xcb_set_bg (int i)
@@ -145,16 +145,13 @@ parse (char *text)
         if (*p == '\\' && p++ && *p != '\\' && strchr ("fbulcr", *p)) {
                 switch (*p++) {
                     case 'f': 
-                        if (!isdigit (*p)) *p = '1'; 
-                        xcb_set_fg ((*p++)-'0');
+                        xcb_set_fg (!isdigit(*p) ? (*p++)-'0' : 11);
                         break;
                     case 'b': 
-                        if (!isdigit (*p)) *p = '0'; 
-                        xcb_set_bg ((*p++)-'0');
+                        xcb_set_bg (!isdigit(*p) ? (*p++)-'0' : 10);
                         break;
                     case 'u': 
-                        if (!isdigit (*p)) *p = '0'; 
-                        xcb_set_ud ((*p++)-'0');
+                        xcb_set_ud (!isdigit(*p) ? (*p++)-'0' : 10);
                         break;
 
                     case 'l': 
@@ -338,7 +335,7 @@ init (void)
     win = xcb_generate_id (c);
     xcb_create_window (c, XCB_COPY_FROM_PARENT, win, root, BAR_OFFSET, y, bar_width,
             BAR_HEIGHT, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, scr->root_visual,
-            XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, (const uint32_t []){ palette[0], XCB_EVENT_MASK_EXPOSURE });
+            XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, (const uint32_t []){ palette[10], XCB_EVENT_MASK_EXPOSURE });
 
     /* Set EWMH hints */
     int ewmh_docking = set_ewmh_atoms (root);
@@ -352,13 +349,13 @@ init (void)
 
     /* Create the gc for drawing */
     draw_gc = xcb_generate_id (c);
-    xcb_create_gc (c, draw_gc, root, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND, (const uint32_t []){ palette[1], palette[0] });
+    xcb_create_gc (c, draw_gc, root, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND, (const uint32_t []){ palette[11], palette[10] });
 
     clear_gc = xcb_generate_id (c);
-    xcb_create_gc (c, clear_gc, root, XCB_GC_FOREGROUND, (const uint32_t []){ palette[0] });
+    xcb_create_gc (c, clear_gc, root, XCB_GC_FOREGROUND, (const uint32_t []){ palette[10] });
 
     underl_gc = xcb_generate_id (c);
-    xcb_create_gc (c, underl_gc, root, XCB_GC_FOREGROUND, (const uint32_t []){ palette[0] });
+    xcb_create_gc (c, underl_gc, root, XCB_GC_FOREGROUND, (const uint32_t []){ palette[10] });
 
     /* Make the bar visible */
     xcb_map_window (c, win);
