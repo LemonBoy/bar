@@ -145,13 +145,16 @@ parse (char *text)
         if (*p == '\\' && p++ && *p != '\\' && strchr ("fbulcr", *p)) {
                 switch (*p++) {
                     case 'f': 
-                        xcb_set_fg (!isdigit(*p) ? (*p++)-'0' : 11);
+                        xcb_set_fg (isdigit(*p) ? (*p)-'0' : 11);
+                        p++;
                         break;
                     case 'b': 
-                        xcb_set_bg (!isdigit(*p) ? (*p++)-'0' : 10);
+                        xcb_set_bg (isdigit(*p) ? (*p)-'0' : 10);
+                        p++;
                         break;
                     case 'u': 
-                        xcb_set_ud (!isdigit(*p) ? (*p++)-'0' : 10);
+                        xcb_set_ud (isdigit(*p) ? (*p)-'0' : 10);
+                        p++;
                         break;
 
                     case 'l': 
