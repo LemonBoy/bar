@@ -14,6 +14,8 @@
 #define BAR_FONT       "-*-terminus-medium-r-normal-*-12-*-*-*-c-*-*-1","fixed"
 /* Some fonts don't set the right width for some chars, pheex it */
 #define BAR_FONT_FALLBACK_WIDTH 6
+/* Define the opacity of the bar (requires a compositor such as compton) */
+#define BAR_OPACITY 1.0 /* 0 is invisible, 1 is opaque */
 /* Color palette */
 #define BACKGROUND 0x232c31
 #define COLOR0 0x2d3c46

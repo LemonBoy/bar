@@ -44,6 +44,7 @@ static xcb_gcontext_t   clear_gc;
 static xcb_gcontext_t   underl_gc;
 static int              bar_width;
 static int              bar_bottom = BAR_BOTTOM;
+static int              force_docking = 0;
 static fontset_item_t   fontset[FONT_MAX]; 
 static fontset_item_t   *sel_font = NULL;
 
@@ -240,72 +241,67 @@ font_load (const char **font_list)
     return 0;
 }
 
-int
-set_ewmh_atoms (xcb_window_t root)
+enum {
+    NET_WM_WINDOW_TYPE,
+    NET_WM_WINDOW_TYPE_DOCK,
+    NET_WM_DESKTOP,
+    NET_WM_STRUT_PARTIAL,
+    NET_WM_STRUT,
+    NET_WM_STATE,
+    NET_WM_WINDOW_OPACITY,
+    NET_WM_STATE_STICKY,
+    NET_WM_STATE_ABOVE,
+};
+
+void
+set_ewmh_atoms ()
 {
-    xcb_intern_atom_cookie_t cookies[5];
-    xcb_intern_atom_reply_t *reply;
-    xcb_get_property_reply_t *reply1;
-    xcb_atom_t atoms[5];
-    int compliance_lvl;
-    uint32_t v[12] = {0};
+    const char *atom_names[] = {
+        "_NET_WM_WINDOW_TYPE",
+        "_NET_WM_WINDOW_TYPE_DOCK",
+        "_NET_WM_DESKTOP",
+        "_NET_WM_STRUT_PARTIAL",
+        "_NET_WM_STRUT",
+        "_NET_WM_STATE",
+        "_NET_WM_WINDOW_OPACITY",
+        /* Leave those at the end since are batch-set */
+        "_NET_WM_STATE_STICKY",
+        "_NET_WM_STATE_ABOVE",
+    };
+    const int atoms = sizeof(atom_names)/sizeof(char *);
+    xcb_intern_atom_cookie_t atom_cookie[atoms];
+    xcb_atom_t atom_list[atoms];
+    xcb_intern_atom_reply_t *atom_reply;
+    int strut[12] = {0};
 
-    cookies[0] = xcb_intern_atom (c, 0, strlen ("_NET_WM_WINDOW_TYPE")     , "_NET_WM_WINDOW_TYPE");
-    cookies[1] = xcb_intern_atom (c, 0, strlen ("_NET_WM_WINDOW_TYPE_DOCK"), "_NET_WM_WINDOW_TYPE_DOCK");
-    cookies[2] = xcb_intern_atom (c, 0, strlen ("_NET_WM_DESKTOP")         , "_NET_WM_DESKTOP");
-    cookies[3] = xcb_intern_atom (c, 0, strlen ("_NET_WM_STRUT_PARTIAL")   , "_NET_WM_STRUT_PARTIAL");
-    cookies[4] = xcb_intern_atom (c, 0, strlen ("_NET_SUPPORTED")          , "_NET_SUPPORTED");
+    /* As suggested fetch all the cookies first (yum!) and then retrieve the
+     * atoms to exploit the async'ness */
+    for (int i = 0; i < atoms; i++)
+        atom_cookie[i] = xcb_intern_atom(c, 0, strlen(atom_names[i]), atom_names[i]);
 
-    reply = xcb_intern_atom_reply (c, cookies[0], NULL);
-    atoms[0] = reply->atom; free (reply);
-    reply = xcb_intern_atom_reply (c, cookies[1], NULL);
-    atoms[1] = reply->atom; free (reply);
-    reply = xcb_intern_atom_reply (c, cookies[2], NULL);
-    atoms[2] = reply->atom; free (reply);
-    reply = xcb_intern_atom_reply (c, cookies[3], NULL);
-    atoms[3] = reply->atom; free (reply);
-    reply = xcb_intern_atom_reply (c, cookies[4], NULL);
-    atoms[4] = reply->atom; free (reply);
-
-    compliance_lvl = 0;
-
-    reply1 = xcb_get_property_reply (c, xcb_get_property (c, 0, root, atoms[4], XCB_ATOM_ATOM, 0, -1), NULL);
-    if (!reply)
-        return compliance_lvl;
-
-    for (xcb_atom_t *a = xcb_get_property_value (reply1); 
-         a && a != xcb_get_property_value_end (reply1).data;
-         a++)
-    {
-        /* Set the _NET_WM_WINDOW_TYPE_DOCK state */
-        if (*a == atoms[0]) {
-            xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atoms[0], XCB_ATOM_ATOM, 32, 1, &atoms[1]);
-            compliance_lvl++;
-        }
-        /* Show on every desktop */
-        if (*a == atoms[2]) {
-            xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atoms[2], XCB_ATOM_CARDINAL, 32, 1, 
-                    (const uint32_t []){ 0xffffffff } );
-            compliance_lvl++;
-        }
-        /* Tell the WM that this space is for the bar */
-        if (*a == atoms[3]) {
-            if (bar_bottom) {
-                v[3]  = BAR_HEIGHT;
-                v[11] = bar_width;
-            }
-            else {
-                v[2] = BAR_HEIGHT;
-                v[8] = bar_width;
-            }
-            xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atoms[3], XCB_ATOM_CARDINAL, 32, 12, v);
-            compliance_lvl++;
-        }
+    for (int i = 0; i < atoms; i++) {
+        atom_reply = xcb_intern_atom_reply(c, atom_cookie[i], NULL);
+        if (!atom_reply)
+            return;
+        atom_list[i] = atom_reply->atom;
+        free(atom_reply);
     }
-    free (reply1);
 
-    /* If the wm supports at least 2 NET atoms then mark as compliant */
-    return (compliance_lvl > 1);
+    /* Prepare the strut array */
+    if (bar_bottom) {
+        strut[3]  = BAR_HEIGHT;
+        strut[11] = bar_width;
+    } else {
+        strut[2] = BAR_HEIGHT;
+        strut[9] = bar_width;
+    }
+
+    xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atom_list[NET_WM_WINDOW_OPACITY], XCB_ATOM_CARDINAL, 32, 1, (const uint32_t []){ (uint32_t)(BAR_OPACITY * 0xffffffff) } );
+    xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atom_list[NET_WM_WINDOW_TYPE], XCB_ATOM_ATOM, 32, 1, &atom_list[NET_WM_WINDOW_TYPE_DOCK]);
+    xcb_change_property (c, XCB_PROP_MODE_APPEND,  win, atom_list[NET_WM_STATE], XCB_ATOM_ATOM, 32, 2, &atom_list[NET_WM_STATE_STICKY]);
+    xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atom_list[NET_WM_DESKTOP], XCB_ATOM_CARDINAL, 32, 1, (const uint32_t []){ -1 } );
+    xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atom_list[NET_WM_STRUT_PARTIAL], XCB_ATOM_CARDINAL, 32, 12, strut);
+    xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atom_list[NET_WM_STRUT], XCB_ATOM_CARDINAL, 32, 4, strut);
 }
 
 void
@@ -340,11 +336,10 @@ init (void)
             BAR_HEIGHT, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, scr->root_visual,
             XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, (const uint32_t []){ palette[10], XCB_EVENT_MASK_EXPOSURE });
 
-    /* Set EWMH hints */
-    int ewmh_docking = set_ewmh_atoms (root);
+    /* For WM that support EWMH atoms */
+    set_ewmh_atoms();
 
-    /* Quirk for wm not supporting the EWMH docking method */
-    xcb_change_window_attributes (c, win, XCB_CW_OVERRIDE_REDIRECT, (const uint32_t []){ !ewmh_docking });
+    xcb_change_window_attributes (c, win, XCB_CW_OVERRIDE_REDIRECT, (const uint32_t []){ force_docking });
 
     /* Create a temporary canvas */
     canvas = xcb_generate_id (c);
@@ -362,8 +357,6 @@ init (void)
 
     /* Make the bar visible */
     xcb_map_window (c, win);
-    /* Send a configure event. Needed to make bar work with Openbox */
-    xcb_configure_window (c, win, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, (const uint32_t []){ BAR_OFFSET, y });
 
     xcb_flush (c);
 }
@@ -412,16 +405,18 @@ main (int argc, char **argv)
     int permanent = 0;
 
     char ch;
-    while ((ch = getopt (argc, argv, "phb")) != -1) {
+    while ((ch = getopt (argc, argv, "phbf")) != -1) {
         switch (ch) {
             case 'h': 
                 printf ("usage: %s [-p | -h] [-b]\n"
                         "\t-h Show this help\n"
                         "\t-b Put bar at the bottom of the screen\n"
+                        "\t-f Force docking (use this if your WM isn't EWMH compliant)\n"
                         "\t-p Don't close after the data ends\n", argv[0]); 
                 exit (0);
             case 'p': permanent = 1; break;
             case 'b': bar_bottom = 1; break;
+            case 'f': force_docking = 1; break;
         }
     }
 

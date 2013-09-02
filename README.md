@@ -1,10 +1,11 @@
 b(ar) a(in't) r(ecursive)
 =========================
-2012 (C) The Lemon Man
+2012-2013 (C) The Lemon Man
 
 A lightweight bar based on XCB (yay). Provides foreground/background color
 switching along with text alignment (screw you dzen!), full utf8 support
-and reduced memory footprint. Nothing less and nothing more.
+and reduced memory footprint. It also supports transparency when using a 
+compositor such as compton. Nothing less and nothing more.
 
 Options
 -------
@@ -13,6 +14,7 @@ bar accepts a couple of command line switches.
 ```
 -h      Show the help and bail out.
 -p      Make the bar permanent.
+-f      Force docking (use this if your WM isn't EWMH compliant)
 -b      Show the bar at the bottom of the screen.
 ```
 
