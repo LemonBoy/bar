@@ -8,6 +8,9 @@
 #include <getopt.h>
 #include <unistd.h>
 #include <xcb/xcb.h>
+#if XINERAMA
+#include <xcb/xinerama.h>
+#endif
 
 #include "config.h"
 
@@ -36,6 +39,11 @@ enum {
     ALIGN_R
 };
 
+typedef struct screen_t {
+    int x;
+    int width;
+} screen_t;
+
 static xcb_connection_t *c;
 static xcb_window_t     win;
 static xcb_drawable_t   canvas;
@@ -48,7 +56,15 @@ static int              force_docking = 0;
 static fontset_item_t   fontset[FONT_MAX]; 
 static fontset_item_t   *sel_font = NULL;
 
+static screen_t         *screens;
+static int              num_screens;
 static const unsigned   palette[] = {COLOR0,COLOR1,COLOR2,COLOR3,COLOR4,COLOR5,COLOR6,COLOR7,COLOR8,COLOR9,BACKGROUND,FOREGROUND};
+
+#if XINERAMA
+static const char *control_characters = "fbulcsr";
+#else
+static const char *control_characters = "fbulcr";
+#endif
 
 static inline void
 xcb_set_bg (int i)
@@ -85,7 +101,7 @@ xcb_set_fontset (int i)
 }
 
 int
-draw_char (int x, int align, wchar_t ch)
+draw_char (screen_t *screen, int x, int align, wchar_t ch)
 {
     int ch_width;
 
@@ -99,30 +115,30 @@ draw_char (int x, int align, wchar_t ch)
 
     switch (align) {
         case ALIGN_C:
-            xcb_copy_area (c, canvas, canvas, draw_gc, bar_width / 2 - x / 2, 0, 
-                    bar_width / 2 - (x + ch_width) / 2, 0, x, BAR_HEIGHT);
-            x = bar_width / 2 - (x + ch_width) / 2 + x;
+            xcb_copy_area (c, canvas, canvas, draw_gc, screen->width / 2 - x / 2 + screen->x, 0,
+                    screen->width / 2 - (x + ch_width) / 2 + screen->x, 0, x, BAR_HEIGHT);
+            x = screen->width / 2 - (x + ch_width) / 2 + x;
             break;
         case ALIGN_R:
-            xcb_copy_area (c, canvas, canvas, draw_gc, bar_width - x, 0, 
-                    bar_width - x - ch_width, 0, x, BAR_HEIGHT);
-            x = bar_width - ch_width; 
+            xcb_copy_area (c, canvas, canvas, draw_gc, screen->width - x + screen->x, 0,
+                    screen->width - x - ch_width + screen->x, 0, x, BAR_HEIGHT);
+            x = screen->width - ch_width;
             break;
     }
 
     /* Draw the background first */
-    xcb_fill_rect (clear_gc, x, 0, ch_width, BAR_HEIGHT);
+    xcb_fill_rect (clear_gc, x + screen->x, 0, ch_width, BAR_HEIGHT);
 
     /* xcb accepts string in UCS-2 BE, so swap */
     ch = (ch >> 8) | (ch << 8);
 
     /* String baseline coordinates */
-    xcb_image_text_16 (c, 1, canvas, draw_gc, x, BAR_HEIGHT / 2 + sel_font->avg_height / 2 - sel_font->descent, 
+    xcb_image_text_16 (c, 1, canvas, draw_gc, x + screen->x, BAR_HEIGHT / 2 + sel_font->avg_height / 2 - sel_font->descent,
             (xcb_char2b_t *)&ch);
 
     /* Draw the underline */
     if (BAR_UNDERLINE_HEIGHT) 
-        xcb_fill_rect (underl_gc, x, BAR_UNDERLINE*(BAR_HEIGHT-BAR_UNDERLINE_HEIGHT), ch_width, BAR_UNDERLINE_HEIGHT);
+        xcb_fill_rect (underl_gc, x + screen->x, BAR_UNDERLINE*(BAR_HEIGHT-BAR_UNDERLINE_HEIGHT), ch_width, BAR_UNDERLINE_HEIGHT);
 
     return ch_width;
 }
@@ -134,6 +150,7 @@ parse (char *text)
 
     int pos_x = 0;
     int align = 0;
+    screen_t *screen = &screens[0];
 
     xcb_fill_rect (clear_gc, 0, 0, bar_width, BAR_HEIGHT);
 
@@ -143,7 +160,7 @@ parse (char *text)
         if (*p == '\n')
             return;
 
-        if (*p == '\\' && p++ && *p != '\\' && strchr ("fbulcr", *p)) {
+        if (*p == '\\' && p++ && *p != '\\' && strchr (control_characters, *p)) {
                 switch (*p++) {
                     case 'f': 
                         xcb_set_fg (isdigit(*p) ? (*p)-'0' : 11);
@@ -157,7 +174,35 @@ parse (char *text)
                         xcb_set_ud (isdigit(*p) ? (*p)-'0' : 10);
                         p++;
                         break;
-
+#if XINERAMA
+                    case 's':
+                        if ((*p) == 'r') {
+                            screen = &screens[num_screens - 1];
+                        } else if ((*p) == 'l') {
+                            screen = &screens[0];
+                        } else if ((*p) == 'n') {
+                            if (screen == &screens[num_screens - 1])
+                                break;
+                            screen++;
+                        } else if ((*p) == 'p') {
+                            if (screen == screens)
+                                break;
+                            screen--;
+                        } else if (isdigit(*p)) {
+                            int index = (*p)-'0';
+                            if (index < num_screens) {
+                                screen = &screens[index];
+                            } else {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                        align = ALIGN_L;
+                        pos_x = 0;
+                        p++;
+                        break;
+#endif
                     case 'l': 
                         align = ALIGN_L; 
                         pos_x = 0; 
@@ -197,7 +242,7 @@ parse (char *text)
             else
                 xcb_set_fontset (FONT_MAIN);
 
-            pos_x += draw_char (pos_x, align, t);
+            pos_x += draw_char (screen, pos_x, align, t);
         }
     }
 }
@@ -310,6 +355,15 @@ init (void)
     xcb_screen_t *scr;
     xcb_window_t root;
     int y;
+    int right_bar_offset;
+
+#if XINERAMA
+    xcb_generic_error_t* err = NULL;
+    xcb_xinerama_query_screens_reply_t *xinerama_reply;
+    xcb_xinerama_query_screens_cookie_t xinerama_query;
+    xcb_xinerama_screen_info_iterator_t xinerama_iter;
+    screen_t *cur_screen;
+#endif
 
     /* Connect to X */
     c = xcb_connect (NULL, NULL);
@@ -329,6 +383,64 @@ init (void)
     /* Load the font */
     if (font_load ((const char* []){ BAR_FONT }))
         exit (1);
+
+    /* Generate a list of screens */
+#if XINERAMA
+    xinerama_query = xcb_xinerama_query_screens_unchecked (c);
+    xinerama_reply = xcb_xinerama_query_screens_reply (c, xinerama_query, &err);
+    if (err != NULL || xinerama_reply == NULL)
+        exit (1);
+
+    xinerama_iter = xcb_xinerama_query_screens_screen_info_iterator (xinerama_reply);
+
+    num_screens = xinerama_iter.rem;
+    screens = calloc (num_screens, sizeof(screen_t));
+
+    if (screens == NULL)
+        exit (1);
+
+    /* Add BAR_OFFSET to the last screen */
+    right_bar_offset = scr->width_in_pixels - bar_width - BAR_OFFSET;
+    for (cur_screen = &screens[num_screens-1]; cur_screen >= screens; xcb_xinerama_screen_info_next (&xinerama_iter), cur_screen--) {
+        cur_screen->width = xinerama_iter.data->width;
+        if (right_bar_offset > 0) {
+            if (right_bar_offset >= cur_screen->width) {
+                /* Remove the screen */
+                num_screens--;
+                right_bar_offset -= cur_screen->width;
+            } else {
+                cur_screen->width -= right_bar_offset;
+                right_bar_offset = 0;
+            }
+        }
+
+        cur_screen->x = xinerama_iter.data->x_org - BAR_OFFSET;
+        if (cur_screen->x < 0) {
+            /* First screen */
+            cur_screen->x = 0;
+            break;
+        }
+    }
+    free(xinerama_reply);
+
+    /* Remove BAR_OFFSET from the first screen */
+    cur_screen->width -= BAR_OFFSET;
+
+    /* Shift */
+    if (cur_screen > screens) {
+        memmove (screens, cur_screen, sizeof(screen_t) * num_screens);
+    }
+
+    /* Reallocate */
+    screens = realloc (screens, num_screens);
+    if (screens == NULL)
+        exit (1);
+#else
+    num_screens = 1;
+    screens = calloc(1, sizeof(screen_t));
+    screens[0].x = 0;
+    screens[0].width = bar_width;
+#endif
 
     /* Create the main window */
     win = xcb_generate_id (c);
@@ -369,6 +481,8 @@ cleanup (void)
         if (fontset[i].xcb_ft)
             xcb_close_font (c, fontset[i].xcb_ft);
     }
+    if (screens)
+        free (screens);
     if (canvas)
         xcb_free_pixmap (c, canvas);
     if (win)
