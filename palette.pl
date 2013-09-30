@@ -24,7 +24,7 @@ while (<F>) {
         elsif ($_ =~ m/^\s*\w*\*(background|foreground|color\d)\s*:\s*([\w\d#]+)/) {
             my ($name, $value) = (uc $1, $2); 
             # Check if it's a color
-            if (substr($value, 1) eq '#') {
+            if (substr($value, 0, 1) eq '#') {
                 $value = hex(substr($value, 1));
             } else {
                 $value = $vars{"$value"};
