@@ -7,6 +7,11 @@ switching along with text alignment (screw you dzen!), full utf8 support
 and reduced memory footprint. It also supports transparency when using a 
 compositor such as compton. Nothing less and nothing more.
 
+Xinerama support
+----------------
+Thanks to @Stebalien now bar is Xinerama compliant, just compile it with
+XINERAMA=1 and you're good to go!
+
 Options
 -------
 bar accepts a couple of command line switches.
@@ -50,4 +55,16 @@ u<0-9>  Selects the underline color from the palette.
 l       Aligns the text to the left.
 c       Aligns the text to the center.
 r       Aligns the text to the right.
+```
+
+
+The options below are valid only if compiled with Xinerama support.
+
+
+```
+s<0-9>  Switches to screen 0-9
+sn      Switches to next screen
+sp      Switches to previous screen
+sr      Switches to the rightmost screen (the latest)
+sl      Switches to the leftmost screen (the first)
 ```
