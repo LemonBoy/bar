@@ -343,7 +343,7 @@ set_ewmh_atoms ()
 
     xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atom_list[NET_WM_WINDOW_OPACITY], XCB_ATOM_CARDINAL, 32, 1, (const uint32_t []){ (uint32_t)(BAR_OPACITY * 0xffffffff) } );
     xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atom_list[NET_WM_WINDOW_TYPE], XCB_ATOM_ATOM, 32, 1, &atom_list[NET_WM_WINDOW_TYPE_DOCK]);
-    xcb_change_property (c, XCB_PROP_MODE_APPEND,  win, atom_list[NET_WM_STATE], XCB_ATOM_ATOM, 32, 2, &atom_list[NET_WM_STATE_STICKY]);
+    xcb_change_property (c, XCB_PROP_MODE_APPEND,  win, atom_list[NET_WM_STATE], XCB_ATOM_ATOM, 32, 1, &atom_list[NET_WM_STATE_STICKY]);
     xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atom_list[NET_WM_DESKTOP], XCB_ATOM_CARDINAL, 32, 1, (const uint32_t []){ -1 } );
     xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atom_list[NET_WM_STRUT_PARTIAL], XCB_ATOM_CARDINAL, 32, 12, strut);
     xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atom_list[NET_WM_STRUT], XCB_ATOM_CARDINAL, 32, 4, strut);
