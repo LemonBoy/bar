@@ -353,38 +353,40 @@ get_xinerama_outputs(xcb_window_t w, screen_t **spp)
     int i, num = 0;
     screen_t *ret;
     xcb_generic_error_t *err;
-    xcb_xinerama_query_screens_cookie_t xinerama_query;
-    xcb_xinerama_query_screens_reply_t *xinerama_reply;
-    xcb_xinerama_screen_info_t *xinerama_info;
+    xcb_xinerama_query_screens_cookie_t xqs_query;
+    xcb_xinerama_query_screens_reply_t *xqs_reply;
+    xcb_xinerama_screen_info_t *xs_info;
     xcb_xinerama_is_active_cookie_t xia_query;
     xcb_xinerama_is_active_reply_t *xia_reply;
 
     xia_query = xcb_xinerama_is_active(c);
     xia_reply = xcb_xinerama_is_active_reply(c, xia_query, &err);
+    if (err != NULL || xia_reply == NULL || !xia_reply->state) {
+    	free(xia_reply);
+        return 0;
+    }
 
-    if (xia_reply && xia_reply->state) {
-        free(xia_reply);
-        xinerama_query = xcb_xinerama_query_screens(c);
-        xinerama_reply = xcb_xinerama_query_screens_reply(c, xinerama_query, &err);
-        if (err != NULL || xinerama_reply == NULL) {
-            fprintf(stderr, "xinerama_query_screens failed\n");
-            return 0;
-        }
+    free(xia_reply);
+    xqs_query = xcb_xinerama_query_screens(c);
+    xqs_reply = xcb_xinerama_query_screens_reply(c, xqs_query, &err);
+    if (err != NULL || xqs_reply == NULL) {
+        fprintf(stderr, "xinerama query screens failed\n");
+        return 0;
+    }
 
-        num = xcb_xinerama_query_screens_screen_info_length(xinerama_reply);
-        xinerama_info = xcb_xinerama_query_screens_screen_info(xinerama_reply);
-        ret = calloc (num_screens, sizeof(screen_t));
-        if (ret == NULL)
+    num = xcb_xinerama_query_screens_screen_info_length(xqs_reply);
+    xs_info = xcb_xinerama_query_screens_screen_info(xqs_reply);
+    ret = calloc (num_screens, sizeof(screen_t));
+    if (ret == NULL)
             exit (1);
 
-        for (int i = num_screens-1; i >= 0; i--) {
-            ret[i].x = xinerama_info[i].x_org;
-            ret[i].width = xinerama_info[i].width;
-        }
-        free(xinerama_reply);
-
-        *spp = ret;
+    for (int i = num_screens-1; i >= 0; i--) {
+        ret[i].x = xs_info[i].x_org;
+        ret[i].width = xs_info[i].width;
     }
+    free(xqs_reply);
+
+    *spp = ret;
 
     return num;
 }
@@ -398,6 +400,7 @@ get_randr_outputs(xcb_window_t w, screen_t **spp)
     xcb_randr_get_screen_resources_current_cookie_t rres_query;
     xcb_randr_get_screen_resources_current_reply_t *rres_reply;
     xcb_randr_output_t *outputs;
+    xcb_timestamp_t config_timestamp;
 
     rres_query = xcb_randr_get_screen_resources_current(c, w);
     rres_reply = xcb_randr_get_screen_resources_current_reply(c, rres_query, &err);
@@ -406,26 +409,29 @@ get_randr_outputs(xcb_window_t w, screen_t **spp)
         return 0;
     }
 
+
     num = xcb_randr_get_screen_resources_current_outputs_length(rres_reply);
     outputs = xcb_randr_get_screen_resources_current_outputs(rres_reply);
+    config_timestamp = rres_reply->config_timestamp;
+    free(rres_reply);
+    if (num < 1)
+        return 0;
     xcb_rectangle_t temp[num];
 
-    /* use all outputs connected to a crtc */
+    /* use all outputs */
     for (i = 0; i < num; i++) {
         xcb_randr_get_output_info_cookie_t output_cookie;
         xcb_randr_get_output_info_reply_t *output_reply;
         xcb_randr_get_crtc_info_cookie_t crtc_cookie;
         xcb_randr_get_crtc_info_reply_t *crtc_reply;
 
-        output_cookie = xcb_randr_get_output_info(c, outputs[i],
-                                                  rres_reply->config_timestamp);
+        output_cookie = xcb_randr_get_output_info(c, outputs[i], config_timestamp);
         output_reply = xcb_randr_get_output_info_reply(c, output_cookie, &err);
         if (err != NULL || output_reply == NULL || output_reply->crtc == XCB_NONE) {
             temp[i].width = 0;
             continue;
         }
-        crtc_cookie = xcb_randr_get_crtc_info(c, output_reply->crtc,
-                                              rres_reply->config_timestamp);
+        crtc_cookie = xcb_randr_get_crtc_info(c, output_reply->crtc, config_timestamp);
         crtc_reply = xcb_randr_get_crtc_info_reply(c, crtc_cookie, &err);
         if (err != NULL || crtc_reply == NULL) {
             fprintf(stderr, "Failed to get randr crtc info\n");
@@ -441,6 +447,11 @@ get_randr_outputs(xcb_window_t w, screen_t **spp)
         free(output_reply);
         cnt++;
     }
+    
+    if (cnt < 1) {
+    	fprintf(stderr, "No usable randr outputs\n");
+        return 0;
+    }
 
     /* check for clones */
     for (i = 0; i < num; i++) {
@@ -449,6 +460,7 @@ get_randr_outputs(xcb_window_t w, screen_t **spp)
         for (j = 0; j < num; j++) {
             if (i == j || temp[j].width == 0 || temp[i].x != temp[j].x || temp[i].y != temp[j].y)
                 continue;
+            /* clone found, only keep one */
             temp[i].width = (temp[i].width < temp[j].width) ? temp[i].width : temp[j].width;
             temp[i].height = (temp[i].height < temp[j].height) ? temp[i].height : temp[j].height;
             temp[j].width = 0;
@@ -547,10 +559,7 @@ init (void)
             if (screens == NULL)
                 exit (1);
         }
-    }
-    
-    if (num_screens == 0)
-    {
+    } else {
         num_screens = 1;
         screens = calloc(1, sizeof(screen_t));
         if (screens == NULL)
