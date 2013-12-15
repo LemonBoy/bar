@@ -134,9 +134,8 @@ draw_char (screen_t *screen, int x, int align, wchar_t ch)
             (xcb_char2b_t *)&ch);
 
     /* Draw the underline */
-    if (BAR_UNDERLINE_HEIGHT) {
+    if (BAR_UNDERLINE_HEIGHT)
         xcb_fill_rect (underl_gc, x + screen->x, BAR_UNDERLINE*(BAR_HEIGHT-BAR_UNDERLINE_HEIGHT), ch_width, BAR_UNDERLINE_HEIGHT);
-    }
 
     return ch_width;
 }
@@ -212,8 +211,8 @@ parse (char *text)
                         align = ALIGN_R; 
                         pos_x = 0; 
                         break;
-		    default:
-			break;
+                    default:
+                        break;
                 }
         } else { /* utf-8 -> ucs-2 */
             wchar_t t;
