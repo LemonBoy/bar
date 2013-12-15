@@ -389,13 +389,6 @@ get_xinerama_outputs(xcb_window_t w, screen_t **spp)
     return num;
 }
 
-struct rect {
-    uint32_t x;
-    uint32_t y;
-    uint32_t width;
-    uint32_t height;
-};
-
 int
 get_randr_outputs(xcb_window_t w, screen_t **spp)
 {
@@ -415,7 +408,7 @@ get_randr_outputs(xcb_window_t w, screen_t **spp)
 
     num = xcb_randr_get_screen_resources_current_outputs_length(rres_reply);
     outputs = xcb_randr_get_screen_resources_current_outputs(rres_reply);
-    struct rect temp[num];
+    xcb_rectangle_t temp[num];
 
     /* use all outputs connected to a crtc */
     for (i = 0; i < num; i++) {
