@@ -515,44 +515,40 @@ init (void)
     else if ((ext_reply = xcb_get_extension_data(c, &xcb_xinerama_id)) && ext_reply->present)
         num_screens = get_xinerama_outputs(root, &screens);
 
-#if 0
     if (num_screens) {
+        int i, num_saved = num_screens;
         /* Add BAR_OFFSET to the last screen */
         right_bar_offset = scr->width_in_pixels - bar_width - BAR_OFFSET;
-        for (cur_screen = &screens[num_screens-1]; cur_screen >= screens; xcb_xinerama_screen_info_next (&xinerama_iter), cur_screen--) {
-            cur_screen->width = xinerama_iter.data->width;
+        for (i = num_screens-1; i >= 0; i--) {
             if (right_bar_offset > 0) {
-                if (right_bar_offset >= cur_screen->width) {
+                if (right_bar_offset >= screens[i].width) {
                     /* Remove the screen */
                     num_screens--;
-                    right_bar_offset -= cur_screen->width;
+                    right_bar_offset -= screens[i].width;
                 } else {
-                    cur_screen->width -= right_bar_offset;
+                    screens[i].width -= right_bar_offset;
                     right_bar_offset = 0;
                 }
             }
 
-            cur_screen->x = xinerama_iter.data->x_org - BAR_OFFSET;
-            if (cur_screen->x < 0) {
+            screens[i].x -= BAR_OFFSET;
+            if (screens[i].x < 0) {
                 /* First screen */
-                cur_screen->x = 0;
+                screens[i].x = 0;
                 break;
             }
         }
         /* Remove BAR_OFFSET from the first screen */
-        cur_screen->width -= BAR_OFFSET;
-        /* Shift */
-        if (cur_screen > screens) {
-            memmove (screens, cur_screen, sizeof(screen_t) * num_screens);
-        }
+        screens[i].width -= BAR_OFFSET;
 
         /* Reallocate */
-        screens = realloc (screens, num_screens);
-        if (screens == NULL)
-            exit (1);
+        if (num_screens > num_saved) {
+            screens = realloc (screens, num_screens);
+            if (screens == NULL)
+                exit (1);
+        }
     }
-    else
-#endif
+    
     if (num_screens == 0)
     {
         num_screens = 1;
