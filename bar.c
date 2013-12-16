@@ -380,7 +380,7 @@ get_xinerama_outputs(xcb_window_t w, screen_t **spp)
     if (ret == NULL)
             exit (1);
 
-    for (int i = num_screens-1; i >= 0; i--) {
+    for (int i = num; i >= 0; i--) {
         ret[i].x = xs_info[i].x_org;
         ret[i].width = xs_info[i].width;
     }
