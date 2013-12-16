@@ -348,50 +348,6 @@ set_ewmh_atoms ()
 }
 
 int
-get_xinerama_outputs(xcb_window_t w, screen_t **spp)
-{
-    int i, num = 0;
-    screen_t *ret;
-    xcb_generic_error_t *err;
-    xcb_xinerama_query_screens_cookie_t xqs_query;
-    xcb_xinerama_query_screens_reply_t *xqs_reply;
-    xcb_xinerama_screen_info_t *xs_info;
-    xcb_xinerama_is_active_cookie_t xia_query;
-    xcb_xinerama_is_active_reply_t *xia_reply;
-
-    xia_query = xcb_xinerama_is_active(c);
-    xia_reply = xcb_xinerama_is_active_reply(c, xia_query, &err);
-    if (err != NULL || xia_reply == NULL || !xia_reply->state) {
-    	free(xia_reply);
-        return 0;
-    }
-
-    free(xia_reply);
-    xqs_query = xcb_xinerama_query_screens(c);
-    xqs_reply = xcb_xinerama_query_screens_reply(c, xqs_query, &err);
-    if (err != NULL || xqs_reply == NULL) {
-        fprintf(stderr, "xinerama query screens failed\n");
-        return 0;
-    }
-
-    num = xcb_xinerama_query_screens_screen_info_length(xqs_reply);
-    xs_info = xcb_xinerama_query_screens_screen_info(xqs_reply);
-    ret = calloc (num_screens, sizeof(screen_t));
-    if (ret == NULL)
-            exit (1);
-
-    for (int i = num; i >= 0; i--) {
-        ret[i].x = xs_info[i].x_org;
-        ret[i].width = xs_info[i].width;
-    }
-    free(xqs_reply);
-
-    *spp = ret;
-
-    return num;
-}
-
-int
 get_randr_outputs(xcb_window_t w, screen_t **spp)
 {
     int i, j, num, cnt = 0;
@@ -488,59 +444,13 @@ get_randr_outputs(xcb_window_t w, screen_t **spp)
     return cnt;
 }
 
-int
-screen_adjust (screen_t *s, int num, screen_t **spp)
-{
-    int i, cnt, right_bar_offset;
-    screen_t *t;
-
-    /* Add BAR_OFFSET to the last screen */
-    right_bar_offset = scr->width_in_pixels - bar_width - BAR_OFFSET;
-
-    for (cnt = num, i = num-1; i >= 0; i--) {
-        if (right_bar_offset > 0) {
-            if (right_bar_offset >= s[i].width) {
-                /* Remove the screen */
-                cnt--;
-                right_bar_offset -= s[i].width;
-            } else {
-                s[i].width -= right_bar_offset;
-                right_bar_offset = 0;
-            }
-        }
-
-        s[i].x -= BAR_OFFSET;
-        if (s[i].x < 0) {
-            /* First screen */
-            s[i].x = 0;
-            break;
-        }
-    }
-
-    /* Remove BAR_OFFSET from the first screen */
-    s[i].width -= BAR_OFFSET;
-
-    t = calloc(cnt, sizeof(screen_t));
-    if (t == NULL)
-        exit(1);
-
-    for (i = 0; i < cnt; i++) {
-        t[i].x = s[i].x;
-        t[i].width = s[i].width;
-    }
-
-    *spp = t;
-
-    return cnt;
-}
 void
 init (void)
 {
     xcb_window_t root;
-    screen_t *stemp;
-    int snum;
     int y;
-    xcb_generic_error_t *err;
+//    const xcb_query_extension_reply_t *randr_ext_reply;
+//    const xcb_query_extension_reply_t *xinerama_ext_reply;
     const xcb_query_extension_reply_t *ext_reply;
 
     /* Connect to X */
@@ -563,19 +473,46 @@ init (void)
         exit (1);
 
     /* Generate a list of screens */
-    snum = 0;
+    num_screens = 0;
     if ((ext_reply = xcb_get_extension_data(c, &xcb_randr_id)) && ext_reply->present) {
-        snum = get_randr_outputs(root, &stemp);
-        if (snum)
+        num_screens = get_randr_outputs(root, &screens);
+        if (num_screens)
             randr_event = ext_reply->first_event;
     }
-    else if ((ext_reply = xcb_get_extension_data(c, &xcb_xinerama_id)) && ext_reply->present)
-        snum = get_xinerama_outputs(root, &stemp);
+    else if ((ext_reply = xcb_get_extension_data(c, &xcb_xinerama_id)) && ext_reply->present) {
+        xcb_xinerama_is_active_cookie_t xia_query;
+        xcb_xinerama_is_active_reply_t *xia_reply;
+        xcb_xinerama_query_screens_cookie_t xqs_query;
+        xcb_xinerama_query_screens_reply_t *xqs_reply;
+        xcb_xinerama_screen_info_t *xs_info;
 
-    if (snum) {
-        num_screens = screen_adjust(stemp, snum, &screens);
-        free(stemp);
-    } else {
+        xia_query = xcb_xinerama_is_active(c);
+        xia_reply = xcb_xinerama_is_active_reply(c, xia_query, NULL);
+
+        if (xia_reply) {
+            if (xia_reply->state) {
+                xqs_query = xcb_xinerama_query_screens(c);
+                xqs_reply = xcb_xinerama_query_screens_reply(c, xqs_query, NULL);
+                if (xqs_reply) {
+
+                    num_screens = xcb_xinerama_query_screens_screen_info_length(xqs_reply);
+                    xs_info = xcb_xinerama_query_screens_screen_info(xqs_reply);
+                    screens = calloc (num_screens, sizeof(screen_t));
+                    if (screens == NULL)
+                        exit (1);
+
+                    for (int i = 0; i < num_screens; i++) {
+                        screens[i].x = xs_info[i].x_org;
+                        screens[i].width = xs_info[i].width;
+                    }
+                    free(xqs_reply);
+                }
+            }
+            free(xia_reply);
+        }
+    }
+
+    if (num_screens == 0) {
         num_screens = 1;
         screens = calloc(1, sizeof(screen_t));
         if (screens == NULL)
@@ -653,8 +590,12 @@ handle_randr_event (xcb_generic_event_t *ev)
     screen_t *s, *t = screens;
 
     num = get_randr_outputs(scr->root, &s);
-    num_screens = screen_adjust(s, num, &screens);
-    free(s);
+//    num_screens = screen_adjust(s, num, &screens);
+    if (num <= 0) {
+        fprintf(stderr, "handle_randr_event: no outputs\n");
+        exit(1);
+    }
+    screens = s;
     free(t);
 }
 
