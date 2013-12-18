@@ -590,12 +590,13 @@ handle_randr_event (xcb_generic_event_t *ev)
     screen_t *s, *t = screens;
 
     num = get_randr_outputs(scr->root, &s);
-//    num_screens = screen_adjust(s, num, &screens);
     if (num <= 0) {
         fprintf(stderr, "handle_randr_event: no outputs\n");
         exit(1);
     }
+    /* there needs to be more fixups after the screens are returned */
     screens = s;
+    num_screens = num;
     free(t);
 }
 
