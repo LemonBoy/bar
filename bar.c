@@ -42,10 +42,10 @@ enum {
 typedef struct screen_t {
     int x;
     int width;
+    xcb_window_t window;
 } screen_t;
 
 static xcb_connection_t *c;
-static xcb_window_t     win;
 static xcb_drawable_t   canvas;
 static xcb_gcontext_t   draw_gc;
 static xcb_gcontext_t   clear_gc;
@@ -317,7 +317,6 @@ set_ewmh_atoms ()
     xcb_intern_atom_cookie_t atom_cookie[atoms];
     xcb_atom_t atom_list[atoms];
     xcb_intern_atom_reply_t *atom_reply;
-    int strut[12] = {0};
 
     /* As suggested fetch all the cookies first (yum!) and then retrieve the
      * atoms to exploit the async'ness */
@@ -333,20 +332,35 @@ set_ewmh_atoms ()
     }
 
     /* Prepare the strut array */
-    if (bar_bottom) {
-        strut[3]  = BAR_HEIGHT;
-        strut[11] = bar_width;
-    } else {
-        strut[2] = BAR_HEIGHT;
-        strut[9] = bar_width;
-    }
+    for (screen_t *cur_screen = screens; cur_screen < screens+num_screens; cur_screen++) {
+        int strut[12] = {0};
+        if (bar_bottom) {
+            strut[3]  = BAR_HEIGHT;
+            strut[10] = cur_screen->x;
+            strut[11] = cur_screen->x + cur_screen->width;
+        } else {
+            strut[2] = BAR_HEIGHT;
+            strut[8] = cur_screen->x;
+            strut[9] = cur_screen->x + cur_screen->width;
+        }
 
-    xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atom_list[NET_WM_WINDOW_OPACITY], XCB_ATOM_CARDINAL, 32, 1, (const uint32_t []){ (uint32_t)(BAR_OPACITY * 0xffffffff) } );
-    xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atom_list[NET_WM_WINDOW_TYPE], XCB_ATOM_ATOM, 32, 1, &atom_list[NET_WM_WINDOW_TYPE_DOCK]);
-    xcb_change_property (c, XCB_PROP_MODE_APPEND,  win, atom_list[NET_WM_STATE], XCB_ATOM_ATOM, 32, 2, &atom_list[NET_WM_STATE_STICKY]);
-    xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atom_list[NET_WM_DESKTOP], XCB_ATOM_CARDINAL, 32, 1, (const uint32_t []){ -1 } );
-    xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atom_list[NET_WM_STRUT_PARTIAL], XCB_ATOM_CARDINAL, 32, 12, strut);
-    xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atom_list[NET_WM_STRUT], XCB_ATOM_CARDINAL, 32, 4, strut);
+        xcb_change_property (c, XCB_PROP_MODE_REPLACE, cur_screen->window, atom_list[NET_WM_WINDOW_OPACITY], XCB_ATOM_CARDINAL, 32, 1, (const uint32_t []){ (uint32_t)(BAR_OPACITY * 0xffffffff) } );
+        xcb_change_property (c, XCB_PROP_MODE_REPLACE, cur_screen->window, atom_list[NET_WM_WINDOW_TYPE], XCB_ATOM_ATOM, 32, 1, &atom_list[NET_WM_WINDOW_TYPE_DOCK]);
+        xcb_change_property (c, XCB_PROP_MODE_APPEND,  cur_screen->window, atom_list[NET_WM_STATE], XCB_ATOM_ATOM, 32, 2, &atom_list[NET_WM_STATE_STICKY]);
+        xcb_change_property (c, XCB_PROP_MODE_REPLACE, cur_screen->window, atom_list[NET_WM_DESKTOP], XCB_ATOM_CARDINAL, 32, 1, (const uint32_t []){ -1 } );
+        xcb_change_property (c, XCB_PROP_MODE_REPLACE, cur_screen->window, atom_list[NET_WM_STRUT_PARTIAL], XCB_ATOM_CARDINAL, 32, 12, strut);
+        xcb_change_property (c, XCB_PROP_MODE_REPLACE, cur_screen->window, atom_list[NET_WM_STRUT], XCB_ATOM_CARDINAL, 32, 4, strut);
+    }
+}
+
+xcb_window_t
+create_window(xcb_window_t root, int x, int y, int width, int height, xcb_visualid_t visual) {
+    xcb_window_t window = xcb_generate_id(c);
+    xcb_create_window(c, XCB_COPY_FROM_PARENT, window, root, x, y, width, height, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, visual, XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, (const uint32_t []){ palette[10], XCB_EVENT_MASK_EXPOSURE });
+
+    xcb_change_window_attributes (c, window, XCB_CW_OVERRIDE_REDIRECT, (const uint32_t []){ force_docking });
+
+    return window;
 }
 
 void
@@ -354,15 +368,13 @@ init (void)
 {
     xcb_screen_t *scr;
     xcb_window_t root;
-    int y;
-    int right_bar_offset;
+    screen_t *cur_screen;
 
 #if XINERAMA
     xcb_generic_error_t* err = NULL;
     xcb_xinerama_query_screens_reply_t *xinerama_reply;
     xcb_xinerama_query_screens_cookie_t xinerama_query;
     xcb_xinerama_screen_info_iterator_t xinerama_iter;
-    screen_t *cur_screen;
 #endif
 
     /* Connect to X */
@@ -377,7 +389,6 @@ init (void)
     root = scr->root;
 
     /* where to place the window */
-    y = (bar_bottom) ? (scr->height_in_pixels - BAR_HEIGHT) : 0;
     bar_width = (BAR_WIDTH < 0) ? (scr->width_in_pixels - BAR_OFFSET) : BAR_WIDTH;
 
     /* Load the font */
@@ -400,7 +411,7 @@ init (void)
         exit (1);
 
     /* Add BAR_OFFSET to the last screen */
-    right_bar_offset = scr->width_in_pixels - bar_width - BAR_OFFSET;
+    int right_bar_offset = scr->width_in_pixels - bar_width - BAR_OFFSET;
     for (cur_screen = &screens[num_screens-1]; cur_screen >= screens; xcb_xinerama_screen_info_next (&xinerama_iter), cur_screen--) {
         cur_screen->width = xinerama_iter.data->width;
         if (right_bar_offset > 0) {
@@ -415,6 +426,10 @@ init (void)
         }
 
         cur_screen->x = xinerama_iter.data->x_org - BAR_OFFSET;
+        /* Create the main window */
+        int y = ( bar_bottom ? ( xinerama_iter.data->height - BAR_HEIGHT ) : 0 ) + xinerama_iter.data->y_org;
+        cur_screen->window = create_window( root, cur_screen->x, y, cur_screen->width, BAR_HEIGHT, scr->root_visual );
+
         if (cur_screen->x < 0) {
             /* First screen */
             cur_screen->x = 0;
@@ -440,18 +455,13 @@ init (void)
     screens = calloc(1, sizeof(screen_t));
     screens[0].x = 0;
     screens[0].width = bar_width;
-#endif
-
     /* Create the main window */
-    win = xcb_generate_id (c);
-    xcb_create_window (c, XCB_COPY_FROM_PARENT, win, root, BAR_OFFSET, y, bar_width,
-            BAR_HEIGHT, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, scr->root_visual,
-            XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, (const uint32_t []){ palette[10], XCB_EVENT_MASK_EXPOSURE });
+    int y = bar_bottom ? (scr->height_in_pixels - BAR_HEIGHT) : 0;
+    screens->window = create_window( root, screens->x, y, screens->width, BAR_HEIGHT, scr->root_visual );
+#endif
 
     /* For WM that support EWMH atoms */
     set_ewmh_atoms();
-
-    xcb_change_window_attributes (c, win, XCB_CW_OVERRIDE_REDIRECT, (const uint32_t []){ force_docking });
 
     /* Create a temporary canvas */
     canvas = xcb_generate_id (c);
@@ -468,7 +478,9 @@ init (void)
     xcb_create_gc (c, underl_gc, root, XCB_GC_FOREGROUND, (const uint32_t []){ palette[10] });
 
     /* Make the bar visible */
-    xcb_map_window (c, win);
+    for(cur_screen = screens; cur_screen < screens + num_screens; cur_screen++) {
+        xcb_map_window (c, cur_screen->window);
+    }
 
     xcb_flush (c);
 }
@@ -481,12 +493,14 @@ cleanup (void)
         if (fontset[i].xcb_ft)
             xcb_close_font (c, fontset[i].xcb_ft);
     }
-    if (screens)
+    if (screens) {
+        for(screen_t *cur_screen = screens; cur_screen < screens + num_screens; cur_screen++) {
+            xcb_destroy_window( c, cur_screen->window );
+        }
         free (screens);
+    }
     if (canvas)
         xcb_free_pixmap (c, canvas);
-    if (win)
-        xcb_destroy_window (c, win);
     if (draw_gc)
         xcb_free_gc (c, draw_gc);
     if (clear_gc)
@@ -573,7 +587,8 @@ main (int argc, char **argv)
         }
 
         if (redraw) /* Copy our temporary pixmap onto the window */
-            xcb_copy_area (c, canvas, win, draw_gc, 0, 0, 0, 0, bar_width, BAR_HEIGHT);
+            for (screen_t* cur_screen = screens; cur_screen < screens + num_screens; cur_screen++)
+                xcb_copy_area (c, canvas, cur_screen->window, draw_gc, cur_screen->x, 0, 0, 0, cur_screen->width, BAR_HEIGHT);
 
         xcb_flush (c);
     }
