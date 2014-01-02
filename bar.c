@@ -442,9 +442,8 @@ init (void)
     cur_screen->width -= BAR_OFFSET;
 
     /* Shift */
-    if (cur_screen > screens) {
+    if (cur_screen > screens) 
         memmove (screens, cur_screen, sizeof(screen_t) * num_screens);
-    }
 
     /* Reallocate */
     screens = realloc (screens, num_screens);
@@ -453,8 +452,9 @@ init (void)
 #else
     num_screens = 1;
     screens = calloc(1, sizeof(screen_t));
-    screens[0].x = 0;
-    screens[0].width = bar_width;
+    /* Take into account the offset */
+    screens[0].x = BAR_OFFSET;
+    screens[0].width = bar_width - BAR_OFFSET;
     /* Create the main window */
     int y = bar_bottom ? (scr->height_in_pixels - BAR_HEIGHT) : 0;
     screens->window = create_window( root, screens->x, y, screens->width, BAR_HEIGHT, scr->root_visual );
