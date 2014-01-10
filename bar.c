@@ -40,12 +40,14 @@ enum {
 
 typedef struct screen_t {
     int x;
+    int y;
     int width;
+    int height;
+    xcb_window_t window;
 } screen_t;
 
 static xcb_connection_t *c;
-static xcb_screen_t     *scr;
-static xcb_window_t     win;
+static xcb_screen_t     *def_scr;
 static xcb_drawable_t   canvas;
 static xcb_gcontext_t   draw_gc;
 static xcb_gcontext_t   clear_gc;
@@ -134,7 +136,7 @@ draw_char (screen_t *screen, int x, int align, wchar_t ch)
             (xcb_char2b_t *)&ch);
 
     /* Draw the underline */
-    if (BAR_UNDERLINE_HEIGHT)
+    if (BAR_UNDERLINE_HEIGHT) 
         xcb_fill_rect (underl_gc, x + screen->x, BAR_UNDERLINE*(BAR_HEIGHT-BAR_UNDERLINE_HEIGHT), ch_width, BAR_UNDERLINE_HEIGHT);
 
     return ch_width;
@@ -145,11 +147,13 @@ parse (char *text)
 {
     char *p = text;
 
+    int i;
     int pos_x = 0;
     int align = 0;
     screen_t *screen = &screens[0];
 
     xcb_fill_rect (clear_gc, 0, 0, bar_width, BAR_HEIGHT);
+
     for (;;) {
         if (*p == '\0')
             return;
@@ -158,7 +162,7 @@ parse (char *text)
 
         if (*p == '\\' && p++ && *p != '\\' && strchr (control_characters, *p)) {
                 switch (*p++) {
-                    case 'f':
+                    case 'f': 
                         xcb_set_fg (isdigit(*p) ? (*p)-'0' : 11);
                         p++;
                         break;
@@ -174,9 +178,17 @@ parse (char *text)
                         if (num_screens == 1)
                             break;
                         if ((*p) == 'r') {
-                            screen = &screens[num_screens - 1];
+                            for (i = num_screens-1; i >= 0; i--)
+                                if (screens[i].width) {
+                                    screen = &screens[i];
+                                    break;
+                                }
                         } else if ((*p) == 'l') {
-                            screen = &screens[0];
+                            for (i = 0; i < num_screens; i++)
+                                if (screens[i].width) {
+                                    screen = &screens[i];
+                                    break;
+                                }
                         } else if ((*p) == 'n') {
                             if (screen == &screens[num_screens - 1])
                                 break;
@@ -187,7 +199,7 @@ parse (char *text)
                             screen--;
                         } else if (isdigit(*p)) {
                             int index = (*p)-'0';
-                            if (index < num_screens) {
+                            if (index < num_screens && screens[index].width != 0) {
                                 screen = &screens[index];
                             } else {
                                 break;
@@ -210,8 +222,6 @@ parse (char *text)
                     case 'r': 
                         align = ALIGN_R; 
                         pos_x = 0; 
-                        break;
-                    default:
                         break;
                 }
         } else { /* utf-8 -> ucs-2 */
@@ -315,7 +325,6 @@ set_ewmh_atoms ()
     xcb_intern_atom_cookie_t atom_cookie[atoms];
     xcb_atom_t atom_list[atoms];
     xcb_intern_atom_reply_t *atom_reply;
-    int strut[12] = {0};
 
     /* As suggested fetch all the cookies first (yum!) and then retrieve the
      * atoms to exploit the async'ness */
@@ -331,27 +340,44 @@ set_ewmh_atoms ()
     }
 
     /* Prepare the strut array */
-    if (bar_bottom) {
-        strut[3]  = BAR_HEIGHT;
-        strut[11] = bar_width;
-    } else {
-        strut[2] = BAR_HEIGHT;
-        strut[9] = bar_width;
-    }
+    for (screen_t *cur_screen = screens; cur_screen < screens+num_screens; cur_screen++) {
+        int strut[12] = {0};
+        if (cur_screen->width == 0)
+            continue;
+        if (bar_bottom) {
+            strut[3]  = BAR_HEIGHT;
+            strut[10] = cur_screen->x;
+            strut[11] = cur_screen->x + cur_screen->width;
+        } else {
+            strut[2] = BAR_HEIGHT;
+            strut[8] = cur_screen->x;
+            strut[9] = cur_screen->x + cur_screen->width;
+        }
 
-    xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atom_list[NET_WM_WINDOW_OPACITY], XCB_ATOM_CARDINAL, 32, 1, (const uint32_t []){ (uint32_t)(BAR_OPACITY * 0xffffffff) } );
-    xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atom_list[NET_WM_WINDOW_TYPE], XCB_ATOM_ATOM, 32, 1, &atom_list[NET_WM_WINDOW_TYPE_DOCK]);
-    xcb_change_property (c, XCB_PROP_MODE_APPEND,  win, atom_list[NET_WM_STATE], XCB_ATOM_ATOM, 32, 2, &atom_list[NET_WM_STATE_STICKY]);
-    xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atom_list[NET_WM_DESKTOP], XCB_ATOM_CARDINAL, 32, 1, (const uint32_t []){ -1 } );
-    xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atom_list[NET_WM_STRUT_PARTIAL], XCB_ATOM_CARDINAL, 32, 12, strut);
-    xcb_change_property (c, XCB_PROP_MODE_REPLACE, win, atom_list[NET_WM_STRUT], XCB_ATOM_CARDINAL, 32, 4, strut);
+        xcb_change_property (c, XCB_PROP_MODE_REPLACE, cur_screen->window, atom_list[NET_WM_WINDOW_OPACITY], XCB_ATOM_CARDINAL, 32, 1, (const uint32_t []){ (uint32_t)(BAR_OPACITY * 0xffffffff) } );
+        xcb_change_property (c, XCB_PROP_MODE_REPLACE, cur_screen->window, atom_list[NET_WM_WINDOW_TYPE], XCB_ATOM_ATOM, 32, 1, &atom_list[NET_WM_WINDOW_TYPE_DOCK]);
+        xcb_change_property (c, XCB_PROP_MODE_APPEND,  cur_screen->window, atom_list[NET_WM_STATE], XCB_ATOM_ATOM, 32, 2, &atom_list[NET_WM_STATE_STICKY]);
+        xcb_change_property (c, XCB_PROP_MODE_REPLACE, cur_screen->window, atom_list[NET_WM_DESKTOP], XCB_ATOM_CARDINAL, 32, 1, (const uint32_t []){ -1 } );
+        xcb_change_property (c, XCB_PROP_MODE_REPLACE, cur_screen->window, atom_list[NET_WM_STRUT_PARTIAL], XCB_ATOM_CARDINAL, 32, 12, strut);
+        xcb_change_property (c, XCB_PROP_MODE_REPLACE, cur_screen->window, atom_list[NET_WM_STRUT], XCB_ATOM_CARDINAL, 32, 4, strut);
+    }
+}
+
+xcb_window_t
+create_window(xcb_window_t root, int x, int y, int width, int height, xcb_visualid_t visual) {
+    xcb_window_t window = xcb_generate_id(c);
+    xcb_create_window(c, XCB_COPY_FROM_PARENT, window, root, x, y, width, height, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, visual, XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, (const uint32_t []){ palette[10], XCB_EVENT_MASK_EXPOSURE });
+
+    xcb_change_window_attributes (c, window, XCB_CW_OVERRIDE_REDIRECT, (const uint32_t []){ force_docking });
+
+    return window;
 }
 
 int
-get_randr_outputs(xcb_window_t w, screen_t **spp)
+get_randr_outputs(xcb_window_t w, xcb_rectangle_t **rects)
 {
     int i, j, num, cnt = 0;
-    screen_t *s;
+    xcb_rectangle_t *r;
     xcb_generic_error_t *err;
     xcb_randr_get_screen_resources_current_cookie_t rres_query;
     xcb_randr_get_screen_resources_current_reply_t *rres_reply;
@@ -362,35 +388,37 @@ get_randr_outputs(xcb_window_t w, screen_t **spp)
     rres_reply = xcb_randr_get_screen_resources_current_reply(c, rres_query, &err);
     if (rres_reply == NULL || err != NULL) {
         fprintf(stderr, "Failed to get current randr screen resources\n");
+        free(rres_reply);
         return 0;
     }
-
 
     num = xcb_randr_get_screen_resources_current_outputs_length(rres_reply);
     outputs = xcb_randr_get_screen_resources_current_outputs(rres_reply);
     config_timestamp = rres_reply->config_timestamp;
     free(rres_reply);
-    if (num < 1)
+    if (num < 1) {
+        fprintf(stderr, "Failed to get current randr outputs\n");
         return 0;
+    }
     xcb_rectangle_t temp[num];
 
-    /* use all outputs */
+    /* get all outputs */
     for (i = 0; i < num; i++) {
-        xcb_randr_get_output_info_cookie_t output_cookie;
+        xcb_randr_get_output_info_cookie_t output_query;
         xcb_randr_get_output_info_reply_t *output_reply;
-        xcb_randr_get_crtc_info_cookie_t crtc_cookie;
+        xcb_randr_get_crtc_info_cookie_t crtc_query;
         xcb_randr_get_crtc_info_reply_t *crtc_reply;
 
-        output_cookie = xcb_randr_get_output_info(c, outputs[i], config_timestamp);
-        output_reply = xcb_randr_get_output_info_reply(c, output_cookie, &err);
+        output_query = xcb_randr_get_output_info(c, outputs[i], config_timestamp);
+        output_reply = xcb_randr_get_output_info_reply(c, output_query, &err);
         if (err != NULL || output_reply == NULL || output_reply->crtc == XCB_NONE) {
             temp[i].width = 0;
             continue;
         }
-        crtc_cookie = xcb_randr_get_crtc_info(c, output_reply->crtc, config_timestamp);
-        crtc_reply = xcb_randr_get_crtc_info_reply(c, crtc_cookie, &err);
-        if (err != NULL || crtc_reply == NULL) {
-            fprintf(stderr, "Failed to get randr crtc info\n");
+        crtc_query = xcb_randr_get_crtc_info(c, output_reply->crtc, config_timestamp);
+        crtc_reply = xcb_randr_get_crtc_info_reply(c, crtc_query, &err);
+        if (err != NULL | crtc_reply == NULL) {
+            fprintf(stderr, "Failed to get randr ctrc info\n");
             temp[i].width = 0;
             free(output_reply);
             continue;
@@ -403,13 +431,13 @@ get_randr_outputs(xcb_window_t w, screen_t **spp)
         free(output_reply);
         cnt++;
     }
-    
+
     if (cnt < 1) {
-    	fprintf(stderr, "No usable randr outputs\n");
+        fprintf(stderr, "No usable randr outputs\n");
         return 0;
     }
 
-    /* check for clones */
+    /* check for clones and inactive outputs */
     for (i = 0; i < num; i++) {
         if (temp[i].width == 0)
             continue;
@@ -429,28 +457,85 @@ get_randr_outputs(xcb_window_t w, screen_t **spp)
         return 0;
     }
 
-    s = calloc(cnt, sizeof(screen_t));
+    r = calloc(cnt, sizeof(xcb_rectangle_t));
+    if (r == NULL)
+        exit(1);
+
+    for (i = j = 0; i < num && j < cnt; i++) {
+        if (temp[i].width) {
+            r[j].x = temp[i].x;
+            r[j].y = temp[i].y;
+            r[j].width = temp[i].width;
+            r[j++].height = temp[i].height;
+        }
+    }
+
+    *rects = r;
+
+    return cnt;
+}
+
+screen_t
+*screens_adjust(xcb_rectangle_t *rects, int nrects)
+{
+    int i, y;
+    screen_t *s;
+
+    s = calloc(nrects, sizeof(screen_t));
     if (s == NULL)
         exit(1);
 
-    for (i = j = 0; i < num && j < cnt; i++)
-        if (temp[i].width) {
-            s[j].x = temp[i].x;
-            s[j++].width = temp[i].width;
+    for (i = 0; i < nrects; i++) {
+        s[i].x = rects[i].x;
+        s[i].y = rects[i].y;
+        s[i].width = rects[i].width;
+        s[i].height = rects[i].height;
+    }
+
+    /* Add BAR_OFFSET to the last screen */
+    int right_bar_offset = def_scr->width_in_pixels - bar_width - BAR_OFFSET;
+    for (i = nrects-1; i >= 0 && right_bar_offset > 0; i--) {
+        if (right_bar_offset >= s[i].width) {
+            right_bar_offset -= s[i].width;
+            /* Deactivate the screen */
+            s[i].width = 0;
+        } else {
+            s[i].width -= right_bar_offset;
+            right_bar_offset = 0;
         }
+    }
 
-    *spp = s;
+    /* Subtract BAR_OFFSET from the first screen */
+    int left_bar_offset = BAR_OFFSET;
+    for (i = 0; i < nrects && left_bar_offset > 0; i++) {
+        if (left_bar_offset >= s[i].width) {
+            left_bar_offset -= s[i].width;
+            s[i].width = 0;
+        } else {
+            s[i].x = left_bar_offset;
+            s[i].width -= left_bar_offset;
+            left_bar_offset = 0;
+        }
+    }
 
-    return cnt;
+    /* Create windows for each output */
+    for (i = 0; i < num_screens; i++) {
+        if (s[i].width) {
+            y = (bar_bottom ? ( s[i].height - BAR_HEIGHT ) : 0 ) + s[i].y;
+            s[i].window = create_window(def_scr->root, s[i].x, y, s[i].width,
+                                                  BAR_HEIGHT, def_scr->root_visual);
+        }
+    }
+
+    return s;
 }
 
 void
 init (void)
 {
+    int i, nrects;
     xcb_window_t root;
-    int y;
-//    const xcb_query_extension_reply_t *randr_ext_reply;
-//    const xcb_query_extension_reply_t *xinerama_ext_reply;
+    xcb_rectangle_t *rects = NULL;
     const xcb_query_extension_reply_t *ext_reply;
 
     /* Connect to X */
@@ -461,49 +546,48 @@ init (void)
     }
 
     /* Grab infos from the first screen */
-    scr  = xcb_setup_roots_iterator (xcb_get_setup (c)).data;
-    root = scr->root;
+    def_scr  = xcb_setup_roots_iterator (xcb_get_setup (c)).data;
+    root = def_scr->root;
 
     /* where to place the window */
-    y = (bar_bottom) ? (scr->height_in_pixels - BAR_HEIGHT) : 0;
-    bar_width = (BAR_WIDTH < 0) ? (scr->width_in_pixels - BAR_OFFSET) : BAR_WIDTH;
+    bar_width = (BAR_WIDTH < 0) ? (def_scr->width_in_pixels - BAR_OFFSET) : BAR_WIDTH;
 
     /* Load the font */
     if (font_load ((const char* []){ BAR_FONT }))
         exit (1);
 
     /* Generate a list of screens */
-    num_screens = 0;
-    if ((ext_reply = xcb_get_extension_data(c, &xcb_randr_id)) && ext_reply->present) {
-        num_screens = get_randr_outputs(root, &screens);
-        if (num_screens)
+    ext_reply = xcb_get_extension_data(c, &xcb_randr_id);
+    if (ext_reply != NULL && ext_reply->present) {
+        nrects = get_randr_outputs(root, &rects);
+        if (nrects)
             randr_event = ext_reply->first_event;
-    }
-    else if ((ext_reply = xcb_get_extension_data(c, &xcb_xinerama_id)) && ext_reply->present) {
-        xcb_xinerama_is_active_cookie_t xia_query;
-        xcb_xinerama_is_active_reply_t *xia_reply;
-        xcb_xinerama_query_screens_cookie_t xqs_query;
-        xcb_xinerama_query_screens_reply_t *xqs_reply;
-        xcb_xinerama_screen_info_t *xs_info;
+    } else {
+        ext_reply = xcb_get_extension_data(c, &xcb_xinerama_id);
+        if (ext_reply != NULL && ext_reply->present) {
+            xcb_xinerama_is_active_cookie_t xia_query;
+            xcb_xinerama_is_active_reply_t *xia_reply;
 
-        xia_query = xcb_xinerama_is_active(c);
-        xia_reply = xcb_xinerama_is_active_reply(c, xia_query, NULL);
+            xia_query = xcb_xinerama_is_active(c);
+            xia_reply = xcb_xinerama_is_active_reply(c, xia_query, NULL);
+            if (xia_reply != NULL && xia_reply->state) {
+                xcb_xinerama_query_screens_cookie_t xqs_query;
+                xcb_xinerama_query_screens_reply_t *xqs_reply;
+                xcb_xinerama_screen_info_t *xs_info;
 
-        if (xia_reply) {
-            if (xia_reply->state) {
                 xqs_query = xcb_xinerama_query_screens(c);
                 xqs_reply = xcb_xinerama_query_screens_reply(c, xqs_query, NULL);
                 if (xqs_reply) {
-
-                    num_screens = xcb_xinerama_query_screens_screen_info_length(xqs_reply);
+                    nrects = xcb_xinerama_query_screens_screen_info_length(xqs_reply);
                     xs_info = xcb_xinerama_query_screens_screen_info(xqs_reply);
-                    screens = calloc (num_screens, sizeof(screen_t));
-                    if (screens == NULL)
-                        exit (1);
-
-                    for (int i = 0; i < num_screens; i++) {
-                        screens[i].x = xs_info[i].x_org;
-                        screens[i].width = xs_info[i].width;
+                    rects = calloc(nrects, sizeof(xcb_rectangle_t));
+                    if (rects == NULL)
+                        exit(1);
+                    for (i = 0; i < nrects; i++) {
+                        rects[i].x = xs_info[i].x_org;
+                        rects[i].y = xs_info[i].y_org;
+                        rects[i].width = xs_info[i].width;
+                        rects[i].height = xs_info[i].height;
                     }
                     free(xqs_reply);
                 }
@@ -512,29 +596,31 @@ init (void)
         }
     }
 
-    if (num_screens == 0) {
+    if (nrects) {
+        num_screens = nrects;
+        screens = screens_adjust(rects, nrects);
+        free(rects);
+    } else {
+        /* no randr or xinerama outputs - default to single screen */
         num_screens = 1;
         screens = calloc(1, sizeof(screen_t));
         if (screens == NULL)
             exit(1);
-        screens[0].x = 0;
-        screens[0].width = bar_width;
+        screens->x = BAR_OFFSET;
+        screens->y = 0;
+        screens->width = bar_width - BAR_OFFSET;
+        screens->height = def_scr->height_in_pixels;
+        int y = bar_bottom ? (screens->height - BAR_HEIGHT) : 0;
+        screens->window = create_window(root, screens->x, y,
+                                        screens->width, BAR_HEIGHT, def_scr->root_visual);
     }
-
-    /* Create the main window */
-    win = xcb_generate_id (c);
-    xcb_create_window (c, XCB_COPY_FROM_PARENT, win, root, BAR_OFFSET, y, bar_width,
-            BAR_HEIGHT, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, scr->root_visual,
-            XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, (const uint32_t []){ palette[10], XCB_EVENT_MASK_EXPOSURE });
 
     /* For WM that support EWMH atoms */
     set_ewmh_atoms();
 
-    xcb_change_window_attributes (c, win, XCB_CW_OVERRIDE_REDIRECT, (const uint32_t []){ force_docking });
-
     /* Create a temporary canvas */
     canvas = xcb_generate_id (c);
-    xcb_create_pixmap (c, scr->root_depth, canvas, root, bar_width, BAR_HEIGHT);
+    xcb_create_pixmap (c, def_scr->root_depth, canvas, root, bar_width, BAR_HEIGHT);
 
     /* Create the gc for drawing */
     draw_gc = xcb_generate_id (c);
@@ -547,7 +633,9 @@ init (void)
     xcb_create_gc (c, underl_gc, root, XCB_GC_FOREGROUND, (const uint32_t []){ palette[10] });
 
     /* Make the bar visible */
-    xcb_map_window (c, win);
+    for (i = 0; i < num_screens; i++)
+        if (screens[i].width)
+            xcb_map_window(c, screens[i].window);
 
     xcb_flush (c);
 }
@@ -560,12 +648,14 @@ cleanup (void)
         if (fontset[i].xcb_ft)
             xcb_close_font (c, fontset[i].xcb_ft);
     }
-    if (screens)
+    if (screens) {
+        for(screen_t *cur_screen = screens; cur_screen < screens + num_screens; cur_screen++) {
+            xcb_destroy_window( c, cur_screen->window );
+        }
         free (screens);
+    }
     if (canvas)
         xcb_free_pixmap (c, canvas);
-    if (win)
-        xcb_destroy_window (c, win);
     if (draw_gc)
         xcb_free_gc (c, draw_gc);
     if (clear_gc)
@@ -586,18 +676,41 @@ sighandle (int signal)
 void
 handle_randr_event (xcb_generic_event_t *ev)
 {
-    int num;
-    screen_t *s, *t = screens;
+    int i, j, nrects;
+    xcb_rectangle_t *rects;
+    screen_t *s, *t;
 
-    num = get_randr_outputs(scr->root, &s);
-    if (num <= 0) {
-        fprintf(stderr, "handle_randr_event: no outputs\n");
-        exit(1);
+    nrects = get_randr_outputs(def_scr->root, &rects);
+
+    t = screens;
+    s = screens_adjust(rects, nrects);
+    free(rects);
+
+    for (i = 0; i < nrects; i++) {
+        if (s[i].width == 0)
+            continue;
+        for (j = 0; j < num_screens; j++)
+            if (t[j].width && t[j].window &&
+                  s[i].x == t[j].x && s[i].y == t[j].y &&
+                  s[i].width == t[j].width && s[i].height == t[j].height) {
+                xcb_destroy_window(c, s[i].window);
+                s[i].window = t[j].window;
+                t[j].window = 0;
+                break;
+            }
     }
-    /* there needs to be more fixups after the screens are returned */
-    screens = s;
-    num_screens = num;
+
+    for (i = 0; i < num_screens; i++)
+        if (t[i].window)
+            xcb_destroy_window(c, t[i].window);
+
+    for (i = 0; i < nrects; i++)
+        if (s[i].width)
+            xcb_map_window(c, s[i].window);
+
     free(t);
+    num_screens = nrects;
+    screens = s;
 }
 
 int 
@@ -657,13 +770,11 @@ main (int argc, char **argv)
                 while ((ev = xcb_poll_for_event (c))) {
                     int type = ev->response_type & 0x7f;
 
-                    if (randr_event > -1 && type == randr_event + XCB_RANDR_SCREEN_CHANGE_NOTIFY)
-                        handle_randr_event(ev);
-                    else if (type == XCB_EXPOSE) {
-                        expose_ev = (xcb_expose_event_t *)ev;
-                        if (expose_ev->count == 0)
+                    if (type == XCB_EXPOSE)
+                        if (((xcb_expose_event_t *)ev)->count == 0)
                             redraw = 1;
-                    }
+                    else if (randr_event > -1 && type == randr_event + XCB_RANDR_SCREEN_CHANGE_NOTIFY)
+                        handle_randr_event(ev);
 
                     free (ev);
                 }
@@ -671,7 +782,10 @@ main (int argc, char **argv)
         }
 
         if (redraw) /* Copy our temporary pixmap onto the window */
-            xcb_copy_area (c, canvas, win, draw_gc, 0, 0, 0, 0, bar_width, BAR_HEIGHT);
+            for (screen_t* cur_screen = screens; cur_screen < screens + num_screens; cur_screen++)
+                if (cur_screen->width)
+                    xcb_copy_area (c, canvas, cur_screen->window, draw_gc, cur_screen->x,
+                                   0, 0, 0, cur_screen->width, BAR_HEIGHT);
 
         xcb_flush (c);
     }

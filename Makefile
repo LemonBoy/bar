@@ -33,6 +33,7 @@ debug: CC += ${CFDEBUG}
 clean:
 	rm -rf ./*.o
 	rm -rf ./${EXEC}
+	rm -rf ./config.h
 
 install: bar
 	test -d ${DESTDIR}${BINDIR} || mkdir -p ${DESTDIR}${BINDIR}
