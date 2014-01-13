@@ -658,7 +658,7 @@ sighandle (int signal)
 int 
 main (int argc, char **argv)
 {
-    char input[1024] = {0, };
+    char input[2048] = {0, };
     struct pollfd pollin[2] = { 
         { .fd = STDIN_FILENO, .events = POLLIN }, 
         { .fd = -1          , .events = POLLIN }, 
