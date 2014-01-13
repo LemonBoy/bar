@@ -326,11 +326,10 @@ parse (char *text)
                                 cmd_area_begin (screen, pos_x, align);
                                 break;
                             case 'c':
-                                if (p++)
-                                    cmd_start = p;
-                                    while (p++ && *p != '\0' && *p != '\n' && *p != '\\')
-                                        ;
-                                    continue;
+                                cmd_start = ++p;
+                                while (*p != '\0' && *p != '\n' && *p != '\\')
+                                    p++;
+                                continue;
                             case 'e':
                                 cmd_area_end (screen, pos_x, align);
                                 size_t cmd_len = (size_t)(p - cmd_start) - 2;
