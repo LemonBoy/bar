@@ -68,3 +68,4 @@ sp      Switches to previous screen
 sr      Switches to the rightmost screen (the latest)
 sl      Switches to the leftmost screen (the first)
 ```
+Clickable areas can be defined with \\ab text \\ac command \\ae.
