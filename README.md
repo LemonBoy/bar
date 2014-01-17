@@ -17,10 +17,18 @@ Options
 bar accepts a couple of command line switches.
 
 ```
--h      Show the help and bail out.
--p      Make the bar permanent.
+-h	    Show the help and bail out.
+-b          Show the bar at the bottom of the screen.
+-w <width>  Set width of the bar.
+-s <height> Set height of the bar.
+-o <offset> Set bar's offset from the left. 0 disables.
 -f      Force docking (use this if your WM isn't EWMH compliant)
--b      Show the bar at the bottom of the screen.
+-u <line>   Choose between underline (1) or overline (0).
+-t <thickness> Thickness of underline. 0 to disable.
+-n <font>   Font used. In the form of '-*-*-' etc.
+-k <width> Set font fallback width.
+-c <opacity> Requires a compositor. 0: Invisible, 1: Opaque.
+-p	    Make the bar permanent.
 ```
 
 Configuration
