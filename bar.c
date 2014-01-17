@@ -179,13 +179,13 @@ cmd_area_begin (screen_t *screen, int x, int align)
 
     switch (align) {
             case ALIGN_L:
-                    area->begin = x;
+                    area->begin = x + screen->x;
                     break;
             case ALIGN_C:
-                    area->begin = screen->width / 2 + x / 2;
+                    area->begin = screen->width / 2 + x / 2 + screen->x;
                     break;
             case ALIGN_R:
-                    area->begin = screen->width;
+                    area->begin = screen->width + screen->x;
                     break;
     }
 
@@ -208,11 +208,11 @@ cmd_area_end (screen_t *screen, int x, int align)
 
     switch (align) {
             case ALIGN_L:
-                    area->end = x;
+                    area->end = x + screen->x;
                     break;
             case ALIGN_C:
                     area->begin -= (x - area->begin_x) / 2;
-                    area->end = screen->width / 2 + x / 2;
+                    area->end = screen->width / 2 + x / 2 + screen->x;
                      /*
                      * if there were any other center aligned areas
                      * before this one, adjust their position
@@ -229,7 +229,7 @@ cmd_area_end (screen_t *screen, int x, int align)
                    break;
             case ALIGN_R:
                     area->begin -= (x - area->begin_x);
-                    area->end = screen->width;
+                    area->end = screen->width + screen->x;
                     /*
                      * if there were any other right aligned areas
                      * before this one, adjust their position
@@ -721,7 +721,7 @@ main (int argc, char **argv)
                         case XCB_BUTTON_RELEASE:
                             button_ev = (xcb_button_release_event_t *)ev;
                             if (button_ev->detail == MOUSE_BUTTON)
-                                xcb_handle_event (button_ev->event_x);
+                                xcb_handle_event (button_ev->root_x);
                     }
 
                     free (ev);
