@@ -149,8 +149,8 @@ parse (char *text)
 
     int pos_x = 0;
     int align = 0;
-    int scr_idx = 0;
-    screen_t *screen = &screens[scr_idx];
+    int screen_idx = 0;
+    screen_t *screen_ptr = &screens[screen_idx];
 
     xcb_fill_rect (clear_gc, 0, 0, bar_width, BAR_HEIGHT);
 
@@ -177,15 +177,15 @@ parse (char *text)
 #if XINERAMA
                     case 's':
                         if ((*p) == 'r') {
-                            scr_idx = num_screens - 1;
+                            screen_idx = num_screens - 1;
                         } else if ((*p) == 'l') {
-                            scr_idx = 0;
+                            screen_idx = 0;
                         } else if ((*p) == 'n') {
-                            scr_idx++;
+                            screen_idx++;
                         } else if ((*p) == 'p') {
-                            scr_idx--;
+                            screen_idx--;
                         } else if (isdigit(*p)) {
-                            scr_idx = (*p)-'0';
+                            screen_idx = (*p)-'0';
                         } else {
                             break;
                         }
@@ -194,12 +194,12 @@ parse (char *text)
                         p++;
                         
                         /* Sanity checks */
-                        if (scr_idx < 0)
-                            scr_idx = 0;
-                        if (scr_idx > num_screens - 1)
-                            scr_idx = num_screens - 1;
+                        if (screen_idx < 0)
+                            screen_idx = 0;
+                        if (screen_idx > num_screens - 1)
+                            screen_idx = num_screens - 1;
 
-                        screen = &screens[scr_idx];
+                        screen_ptr = &screens[screen_idx];
 
                         align = ALIGN_L;
                         pos_x = 0;
@@ -219,8 +219,10 @@ parse (char *text)
                         break;
                 }
         } else { 
-            if (!screen->window)
+#if XINERAMA
+            if (!screen_ptr->window)
                 continue;
+#endif
             
             /* utf-8 -> ucs-2 */
             wchar_t t;
@@ -248,7 +250,7 @@ parse (char *text)
             else
                 xcb_set_fontset (FONT_MAIN);
 
-            pos_x += draw_char (screen, pos_x, align, t);
+            pos_x += draw_char (screen_ptr, pos_x, align, t);
         }
     }
 }
