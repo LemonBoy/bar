@@ -101,7 +101,7 @@ xcb_set_fontset (int i)
 }
 
 int
-draw_char (screen_t *screen, int x, int align, wchar_t ch)
+draw_char (screen_t *screen, int x, int align, uint16_t ch)
 {
     int ch_width;
 
@@ -217,32 +217,33 @@ parse (char *text)
                         break;
                 }
         } else { /* utf-8 -> ucs-2 */
-            wchar_t t;
+            uint8_t *utf = (uint8_t *)p;
+            uint16_t ucs;
 
-            if (!(p[0] & 0x80)) {
-                t  = p[0]; 
-                p += 1;
+            if (utf[0] < 0x80) {
+                ucs = utf[0];
+                p  += 1;
             }
-            else if ((p[0] & 0xe0) == 0xc0 && (p[1] & 0xc0) == 0x80) {
-                t  = (p[0] & 0x1f) << 6 | (p[1] & 0x3f);
+            else if ((utf[0] & 0xe0) == 0xc0) {
+                ucs = (utf[0] & 0x1f) << 6 | (utf[1] & 0x3f);
                 p += 2;
             }
-            else if ((p[0] & 0xf0) == 0xe0 && (p[1] & 0xc0) == 0x80 && (p[2] & 0xc0) == 0x80) {
-                t  = (p[0] & 0xf) << 12 | (p[1] & 0x3f) << 6 | (p[2] & 0x3f);
+            else if ((utf[0] & 0xf0) == 0xe0) {
+                ucs = (utf[0] & 0xf) << 12 | (utf[1] & 0x3f) << 6 | (utf[2] & 0x3f);
                 p += 3;
             }
-            else { /* ASCII chars > 127 go in the extended latin range */
-                t  = 0xc200 + p[0];
+            else { /* Handle ascii > 0x80 */
+                ucs = utf[0];
                 p += 1;
             }
 
             /* The character is outside the main font charset, use the fallback */
-            if (t < fontset[FONT_MAIN].char_min || t > fontset[FONT_MAIN].char_max)
+            if (ucs < fontset[FONT_MAIN].char_min || ucs > fontset[FONT_MAIN].char_max)
                 xcb_set_fontset (FONT_FALLBACK);
             else
                 xcb_set_fontset (FONT_MAIN);
 
-            pos_x += draw_char (screen, pos_x, align, t);
+            pos_x += draw_char (screen, pos_x, align, ucs);
         }
     }
 }
@@ -299,7 +300,7 @@ enum {
 };
 
 void
-set_ewmh_atoms ()
+set_ewmh_atoms (void)
 {
     const char *atom_names[] = {
         "_NET_WM_WINDOW_TYPE",
