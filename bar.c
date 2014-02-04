@@ -155,41 +155,39 @@ parse (char *text)
     xcb_fill_rect (clear_gc, 0, 0, bar_width, BAR_HEIGHT);
 
     for (;;) {
-        if (*p == '\0')
-            return;
-        if (*p == '\n')
+        if (*p == '\0' || *p == '\n')
             return;
 
         if (*p == '\\' && p++ && *p != '\\' && strchr (control_characters, *p)) {
                 switch (*p++) {
                     case 'f': 
-                        xcb_set_fg (isdigit(*p) ? (*p)-'0' : 11);
+                        xcb_set_fg (isdigit(*p) ? *p-'0' : 11);
                         p++;
                         break;
                     case 'b': 
-                        xcb_set_bg (isdigit(*p) ? (*p)-'0' : 10);
+                        xcb_set_bg (isdigit(*p) ? *p-'0' : 10);
                         p++;
                         break;
                     case 'u': 
-                        xcb_set_ud (isdigit(*p) ? (*p)-'0' : 10);
+                        xcb_set_ud (isdigit(*p) ? *p-'0' : 10);
                         p++;
                         break;
 #if XINERAMA
                     case 's':
-                        if ((*p) == 'r') {
+                        if (*p == 'r') {
                             screen = &screens[num_screens - 1];
-                        } else if ((*p) == 'l') {
+                        } else if (*p == 'l') {
                             screen = &screens[0];
-                        } else if ((*p) == 'n') {
+                        } else if (*p == 'n') {
                             if (screen == &screens[num_screens - 1])
                                 break;
                             screen++;
-                        } else if ((*p) == 'p') {
+                        } else if (*p == 'p') {
                             if (screen == screens)
                                 break;
                             screen--;
                         } else if (isdigit(*p)) {
-                            int index = (*p)-'0';
+                            int index = *p-'0';
                             if (index < num_screens) {
                                 screen = &screens[index];
                             } else {
