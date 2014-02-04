@@ -568,7 +568,9 @@ main (int argc, char **argv)
                 else           break;               /* ...bail out */
             }
             if (pollin[0].revents & POLLIN) { /* New input, process it */
-                fgets (input, sizeof(input), stdin);
+                if (fgets (input, sizeof(input), stdin) == NULL)
+                    break; /* EOF received */
+
                 parse (input);
                 redraw = 1;
             }
