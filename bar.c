@@ -17,6 +17,7 @@
 // Here be dragons
 
 #define MAX(a,b) ((a > b) ? a : b)
+#define MIN(a,b) ((a < b) ? a : b)
 
 typedef struct fontset_item_t {
     xcb_font_t      xcb_ft;
@@ -100,7 +101,7 @@ xcb_set_fontset (int i)
 }
 
 int
-draw_char (screen_t *screen, int x, int align, wchar_t ch)
+draw_char (screen_t *screen, int x, int align, uint16_t ch)
 {
     int ch_width;
 
@@ -155,40 +156,37 @@ parse (char *text)
     xcb_fill_rect (clear_gc, 0, 0, bar_width, BAR_HEIGHT);
 
     for (;;) {
-        if (*p == '\0')
-            return;
-        if (*p == '\n')
+        if (*p == '\0' || *p == '\n')
             return;
 
         if (*p == '\\' && p++ && *p != '\\' && strchr (control_characters, *p)) {
                 switch (*p++) {
                     case 'f': 
-                        xcb_set_fg (isdigit(*p) ? (*p)-'0' : 11);
+                        xcb_set_fg (isdigit(*p) ? *p-'0' : 11);
                         p++;
                         break;
                     case 'b': 
-                        xcb_set_bg (isdigit(*p) ? (*p)-'0' : 10);
+                        xcb_set_bg (isdigit(*p) ? *p-'0' : 10);
                         p++;
                         break;
                     case 'u': 
-                        xcb_set_ud (isdigit(*p) ? (*p)-'0' : 10);
+                        xcb_set_ud (isdigit(*p) ? *p-'0' : 10);
                         p++;
                         break;
 #if XINERAMA
                     case 's':
-                        if ((*p) == 'r') {
+                        if (*p == 'r') 
                             screen_idx = num_screens - 1;
-                        } else if ((*p) == 'l') {
+                        else if (*p == 'l') 
                             screen_idx = 0;
-                        } else if ((*p) == 'n') {
+                        else if (*p == 'n') 
                             screen_idx++;
-                        } else if ((*p) == 'p') {
+                        else if (*p == 'p') 
                             screen_idx--;
-                        } else if (isdigit(*p)) {
-                            screen_idx = (*p)-'0';
-                        } else {
+                        else if (isdigit(*p))
+                            screen_idx = *p-'0';
+                        else 
                             break;
-                        }
 
                         /* Consume the argument */
                         p++;
@@ -218,39 +216,38 @@ parse (char *text)
                         pos_x = 0; 
                         break;
                 }
-        } else { 
+        } else { /* utf-8 -> ucs-2 */
 #if XINERAMA
             if (!screen_ptr->window)
                 continue;
 #endif
-            
-            /* utf-8 -> ucs-2 */
-            wchar_t t;
+            uint8_t *utf = (uint8_t *)p;
+            uint16_t ucs;
 
-            if (!(p[0] & 0x80)) {
-                t  = p[0]; 
-                p += 1;
+            if (utf[0] < 0x80) {
+                ucs = utf[0];
+                p  += 1;
             }
-            else if ((p[0] & 0xe0) == 0xc0 && (p[1] & 0xc0) == 0x80) {
-                t  = (p[0] & 0x1f) << 6 | (p[1] & 0x3f);
+            else if ((utf[0] & 0xe0) == 0xc0) {
+                ucs = (utf[0] & 0x1f) << 6 | (utf[1] & 0x3f);
                 p += 2;
             }
-            else if ((p[0] & 0xf0) == 0xe0 && (p[1] & 0xc0) == 0x80 && (p[2] & 0xc0) == 0x80) {
-                t  = (p[0] & 0xf) << 12 | (p[1] & 0x3f) << 6 | (p[2] & 0x3f);
+            else if ((utf[0] & 0xf0) == 0xe0) {
+                ucs = (utf[0] & 0xf) << 12 | (utf[1] & 0x3f) << 6 | (utf[2] & 0x3f);
                 p += 3;
             }
-            else { /* ASCII chars > 127 go in the extended latin range */
-                t  = 0xc200 + p[0];
+            else { /* Handle ascii > 0x80 */
+                ucs = utf[0];
                 p += 1;
             }
 
             /* The character is outside the main font charset, use the fallback */
-            if (t < fontset[FONT_MAIN].char_min || t > fontset[FONT_MAIN].char_max)
+            if (ucs < fontset[FONT_MAIN].char_min || ucs > fontset[FONT_MAIN].char_max)
                 xcb_set_fontset (FONT_FALLBACK);
             else
                 xcb_set_fontset (FONT_MAIN);
 
-            pos_x += draw_char (screen_ptr, pos_x, align, t);
+            pos_x += draw_char (screen_ptr, pos_x, align, ucs);
         }
     }
 }
@@ -307,7 +304,7 @@ enum {
 };
 
 void
-set_ewmh_atoms ()
+set_ewmh_atoms (void)
 {
     const char *atom_names[] = {
         "_NET_WM_WINDOW_TYPE",
@@ -431,7 +428,10 @@ init (void)
             screens[i].window = create_window(root, screens[i].x, y, screens[i].width, BAR_HEIGHT, scr->root_visual);
         }
 
-        left_offset -= screens[i].width;
+        if (left_offset) 
+            left_offset -= MIN(screens[i].width, left_offset);
+
+        xcb_xinerama_screen_info_next (&xinerama_iter);
     }
 
     free(xinerama_reply);
@@ -555,7 +555,9 @@ main (int argc, char **argv)
                 else           break;               /* ...bail out */
             }
             if (pollin[0].revents & POLLIN) { /* New input, process it */
-                fgets (input, sizeof(input), stdin);
+                if (fgets (input, sizeof(input), stdin) == NULL)
+                    break; /* EOF received */
+
                 parse (input);
                 redraw = 1;
             }
