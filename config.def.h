@@ -29,3 +29,6 @@
 #define COLOR8 0x425059
 #define COLOR9 0xcc6666
 #define FOREGROUND 0xc5c8c6
+
+/* Mouse button to react to */
+#define MOUSE_BUTTON 1
