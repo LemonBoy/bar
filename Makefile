@@ -1,6 +1,6 @@
 CC	?= gcc
 STRIP ?= strip
-CFLAGS = -std=c99 -fshort-wchar -Os
+CFLAGS = -std=c99 -O2
 LDFLAGS = -lxcb
 XINERAMA ?= 0
 ifneq "$(XINERAMA)" "0"
