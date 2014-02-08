@@ -18,6 +18,33 @@
 
 #define MAX(a,b) ((a > b) ? a : b)
 
+// the height of the bar (in pixels)
+static int bar_height = 15;
+
+// the width of the bar. set to -1 to fit screen
+static int bar_width = -1;
+
+// offset from the left. set to 0 to have no effect
+static int bar_offset = 0;
+
+// choose between an underline or an overline
+static int bar_underline = 1;
+
+// thickness of underline (in pixels). set 0 to disable
+static int bar_underline_height = 2;
+
+// default bar position, overwritten by -b op
+static int bar_bottom = 0;
+
+// fonts used for the bar, comma seperated. only the first 2 will be used
+static char* bar_font = "-*-terminus-medium-r-normal-*-12-*-*-*-c-*-*-1";
+
+// some fonts don't set the right width for some chars
+static int bar_font_fallback_width = 6;
+
+// define the opacity of the bar (requires a compositor such as compton)
+static int bar_opacity = 1.0; // 0 is invisible, 1 is opaque
+
 typedef struct fontset_item_t {
     xcb_font_t      xcb_ft;
     xcb_charinfo_t *table;
@@ -51,7 +78,7 @@ static xcb_gcontext_t   draw_gc;
 static xcb_gcontext_t   clear_gc;
 static xcb_gcontext_t   underl_gc;
 static int              bar_width;
-static int              bar_bottom = BAR_BOTTOM;
+// static int              bar_bottom = bar_bottom;
 static int              force_docking = 0;
 static fontset_item_t   fontset[FONT_MAX]; 
 static fontset_item_t   *sel_font = NULL;
@@ -111,34 +138,34 @@ draw_char (screen_t *screen, int x, int align, uint16_t ch)
 
     /* Some fonts (such as anorexia) have the space char with the width set to 0 */
     if (ch_width == 0)
-        ch_width = BAR_FONT_FALLBACK_WIDTH;
+        ch_width = bar_font_fallback_width;
 
     switch (align) {
         case ALIGN_C:
             xcb_copy_area (c, canvas, canvas, draw_gc, screen->width / 2 - x / 2 + screen->x, 0,
-                    screen->width / 2 - (x + ch_width) / 2 + screen->x, 0, x, BAR_HEIGHT);
+                    screen->width / 2 - (x + ch_width) / 2 + screen->x, 0, x, bar_height);
             x = screen->width / 2 - (x + ch_width) / 2 + x;
             break;
         case ALIGN_R:
             xcb_copy_area (c, canvas, canvas, draw_gc, screen->width - x + screen->x, 0,
-                    screen->width - x - ch_width + screen->x, 0, x, BAR_HEIGHT);
+                    screen->width - x - ch_width + screen->x, 0, x, bar_height);
             x = screen->width - ch_width;
             break;
     }
 
     /* Draw the background first */
-    xcb_fill_rect (clear_gc, x + screen->x, 0, ch_width, BAR_HEIGHT);
+    xcb_fill_rect (clear_gc, x + screen->x, 0, ch_width, bar_height);
 
     /* xcb accepts string in UCS-2 BE, so swap */
     ch = (ch >> 8) | (ch << 8);
 
     /* String baseline coordinates */
-    xcb_image_text_16 (c, 1, canvas, draw_gc, x + screen->x, BAR_HEIGHT / 2 + sel_font->avg_height / 2 - sel_font->descent,
+    xcb_image_text_16 (c, 1, canvas, draw_gc, x + screen->x, bar_height / 2 + sel_font->avg_height / 2 - sel_font->descent,
             (xcb_char2b_t *)&ch);
 
     /* Draw the underline */
-    if (BAR_UNDERLINE_HEIGHT) 
-        xcb_fill_rect (underl_gc, x + screen->x, BAR_UNDERLINE*(BAR_HEIGHT-BAR_UNDERLINE_HEIGHT), ch_width, BAR_UNDERLINE_HEIGHT);
+    if (bar_underline_height) 
+        xcb_fill_rect (underl_gc, x + screen->x, bar_underline*(bar_height-bar_underline_height), ch_width, bar_underline_height);
 
     return ch_width;
 }
@@ -152,7 +179,7 @@ parse (char *text)
     int align = 0;
     screen_t *screen = &screens[0];
 
-    xcb_fill_rect (clear_gc, 0, 0, bar_width, BAR_HEIGHT);
+    xcb_fill_rect (clear_gc, 0, 0, bar_width, bar_height);
 
     for (;;) {
         if (*p == '\0' || *p == '\n')
@@ -334,16 +361,16 @@ set_ewmh_atoms (void)
     for (screen_t *cur_screen = screens; cur_screen < screens+num_screens; cur_screen++) {
         int strut[12] = {0};
         if (bar_bottom) {
-            strut[3]  = BAR_HEIGHT;
+            strut[3]  = bar_height;
             strut[10] = cur_screen->x;
             strut[11] = cur_screen->x + cur_screen->width;
         } else {
-            strut[2] = BAR_HEIGHT;
+            strut[2] = bar_height;
             strut[8] = cur_screen->x;
             strut[9] = cur_screen->x + cur_screen->width;
         }
 
-        xcb_change_property (c, XCB_PROP_MODE_REPLACE, cur_screen->window, atom_list[NET_WM_WINDOW_OPACITY], XCB_ATOM_CARDINAL, 32, 1, (const uint32_t []){ (uint32_t)(BAR_OPACITY * 0xffffffff) } );
+        xcb_change_property (c, XCB_PROP_MODE_REPLACE, cur_screen->window, atom_list[NET_WM_WINDOW_OPACITY], XCB_ATOM_CARDINAL, 32, 1, (const uint32_t []){ (uint32_t)(bar_opacity * 0xffffffff) } );
         xcb_change_property (c, XCB_PROP_MODE_REPLACE, cur_screen->window, atom_list[NET_WM_WINDOW_TYPE], XCB_ATOM_ATOM, 32, 1, &atom_list[NET_WM_WINDOW_TYPE_DOCK]);
         xcb_change_property (c, XCB_PROP_MODE_APPEND,  cur_screen->window, atom_list[NET_WM_STATE], XCB_ATOM_ATOM, 32, 2, &atom_list[NET_WM_STATE_STICKY]);
         xcb_change_property (c, XCB_PROP_MODE_REPLACE, cur_screen->window, atom_list[NET_WM_DESKTOP], XCB_ATOM_CARDINAL, 32, 1, (const uint32_t []){ -1 } );
@@ -388,10 +415,10 @@ init (void)
     root = scr->root;
 
     /* where to place the window */
-    bar_width = (BAR_WIDTH < 0) ? (scr->width_in_pixels - BAR_OFFSET) : BAR_WIDTH;
+    bar_width = (bar_width < 0) ? (scr->width_in_pixels - bar_offset) : bar_width;
 
     /* Load the font */
-    if (font_load ((const char* []){ BAR_FONT }))
+    if (font_load ((const char* []){ bar_font,"fixed" }))
         exit (1);
 
     /* Generate a list of screens */
@@ -409,8 +436,8 @@ init (void)
     if (screens == NULL)
         exit (1);
 
-    /* Add BAR_OFFSET to the last screen */
-    int right_bar_offset = scr->width_in_pixels - bar_width - BAR_OFFSET;
+    /* Add bar_offset to the last screen */
+    int right_bar_offset = scr->width_in_pixels - bar_width - bar_offset;
     for (cur_screen = &screens[num_screens-1]; cur_screen >= screens; xcb_xinerama_screen_info_next (&xinerama_iter), cur_screen--) {
         cur_screen->width = xinerama_iter.data->width;
         if (right_bar_offset > 0) {
@@ -424,10 +451,10 @@ init (void)
             }
         }
 
-        cur_screen->x = xinerama_iter.data->x_org - BAR_OFFSET;
+        cur_screen->x = xinerama_iter.data->x_org - bar_offset;
         /* Create the main window */
-        int y = ( bar_bottom ? ( xinerama_iter.data->height - BAR_HEIGHT ) : 0 ) + xinerama_iter.data->y_org;
-        cur_screen->window = create_window( root, cur_screen->x, y, cur_screen->width, BAR_HEIGHT, scr->root_visual );
+        int y = ( bar_bottom ? ( xinerama_iter.data->height - bar_height ) : 0 ) + xinerama_iter.data->y_org;
+        cur_screen->window = create_window( root, cur_screen->x, y, cur_screen->width, bar_height, scr->root_visual );
 
         if (cur_screen->x < 0) {
             /* First screen */
@@ -437,8 +464,8 @@ init (void)
     }
     free(xinerama_reply);
 
-    /* Remove BAR_OFFSET from the first screen */
-    cur_screen->width -= BAR_OFFSET;
+    /* Remove bar_offset from the first screen */
+    cur_screen->width -= bar_offset;
 
     /* Shift */
     if (cur_screen > screens) 
@@ -452,11 +479,11 @@ init (void)
     num_screens = 1;
     screens = calloc(1, sizeof(screen_t));
     /* Take into account the offset */
-    screens[0].x = BAR_OFFSET;
-    screens[0].width = bar_width - BAR_OFFSET;
+    screens[0].x = bar_offset;
+    screens[0].width = bar_width - bar_offset;
     /* Create the main window */
-    int y = bar_bottom ? (scr->height_in_pixels - BAR_HEIGHT) : 0;
-    screens->window = create_window( root, screens->x, y, screens->width, BAR_HEIGHT, scr->root_visual );
+    int y = bar_bottom ? (scr->height_in_pixels - bar_height) : 0;
+    screens->window = create_window( root, screens->x, y, screens->width, bar_height, scr->root_visual );
 #endif
 
     /* For WM that support EWMH atoms */
@@ -464,7 +491,7 @@ init (void)
 
     /* Create a temporary canvas */
     canvas = xcb_generate_id (c);
-    xcb_create_pixmap (c, scr->root_depth, canvas, root, bar_width, BAR_HEIGHT);
+    xcb_create_pixmap (c, scr->root_depth, canvas, root, bar_width, bar_height);
 
     /* Create the gc for drawing */
     draw_gc = xcb_generate_id (c);
@@ -532,18 +559,36 @@ main (int argc, char **argv)
     int permanent = 0;
 
     char ch;
-    while ((ch = getopt (argc, argv, "phbf")) != -1) {
+    while ((ch = getopt (argc, argv, "hbw:s:o:fu:t:n:k:c:p")) != -1) {
         switch (ch) {
             case 'h': 
                 printf ("usage: %s [-p | -h] [-b]\n"
-                        "\t-h Show this help\n"
-                        "\t-b Put bar at the bottom of the screen\n"
+                        "\t-h Show this help.\n"
+                        "\t-b Put bar at the bottom of the screen.\n"
+			"\t-w <width> Set width of the bar.\n"
+			"\t-s <height> Set height of the bar.\n"
+			"\t-o <offset> Set bar's offset from the left. 0 disables.\n"
                         "\t-f Force docking (use this if your WM isn't EWMH compliant)\n"
-                        "\t-p Don't close after the data ends\n", argv[0]); 
+			"\t-u <line> Choose between underline (1) or overline (0).\n"
+			"\t-t <thickness> Thickness of underline. 0 to disable.\n"
+			"\t-n <font> Font used. In the form of '-*-*...' etc.\n"
+			"\t-k <width> Set font fallback width.\n"
+			"\t-c <opacity> Requires a compositor. 0: Invisible, 1: Opaque.\n"
+                        "\t-p Don't close after the data ends.\n", argv[0]); 
                 exit (0);
-            case 'p': permanent = 1; break;
+
+	    // very little error checking
             case 'b': bar_bottom = 1; break;
+	    case 'w': bar_width = atoi(optarg); break;
+	    case 's': bar_height = atoi(optarg); break;
+	    case 'o': bar_offset = atoi(optarg); break;
             case 'f': force_docking = 1; break;
+	    case 'u': bar_underline = atoi(optarg); break;
+	    case 't': bar_underline_height = atoi(optarg); break;
+	    case 'n': bar_font = optarg; break;
+	    case 'k': bar_font_fallback_width = atoi(optarg); break;
+	    case 'c': bar_opacity = atoi(optarg); break;
+            case 'p': permanent = 1; break;
         }
     }
 
@@ -555,7 +600,7 @@ main (int argc, char **argv)
     /* Get the fd to Xserver */
     pollin[1].fd = xcb_get_file_descriptor (c);
 
-    xcb_fill_rect (clear_gc, 0, 0, bar_width, BAR_HEIGHT);
+    xcb_fill_rect (clear_gc, 0, 0, bar_width, bar_height);
 
     for (;;) {
         int redraw = 0;
@@ -589,7 +634,7 @@ main (int argc, char **argv)
 
         if (redraw) /* Copy our temporary pixmap onto the window */
             for (screen_t* cur_screen = screens; cur_screen < screens + num_screens; cur_screen++)
-                xcb_copy_area (c, canvas, cur_screen->window, draw_gc, cur_screen->x, 0, 0, 0, cur_screen->width, BAR_HEIGHT);
+                xcb_copy_area (c, canvas, cur_screen->window, draw_gc, cur_screen->x, 0, 0, 0, cur_screen->width, bar_height);
 
         xcb_flush (c);
     }
