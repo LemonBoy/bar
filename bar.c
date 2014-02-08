@@ -416,6 +416,7 @@ init (void)
 
     xia_reply = xcb_xinerama_is_active_reply (c, xcb_xinerama_is_active (c), NULL);
 
+    /* Check if Xinerama is active */
     if (xia_reply && xia_reply->state) {
         xcb_xinerama_query_screens_reply_t *xqs_reply;
         xcb_xinerama_screen_info_iterator_t iter;
@@ -425,13 +426,13 @@ init (void)
         iter = xcb_xinerama_query_screens_screen_info_iterator (xqs_reply);
 
         /* The width is consumed across all the screens */
-        int width_to_consume = (cfg.width == scr->width_in_pixels) ? 0 : cfg.width;
+        int width = cfg.width;
 
         while (iter.rem) {
             monitor_t *mon = monitor_new (
-                    iter.data->x_org + ((iter.data->width > width_to_consume) ? width_to_consume : 0),
+                    iter.data->x_org,
                     iter.data->y_org + cfg.place_bottom ? (iter.data->height - cfg.height) : 0,
-                    iter.data->width - MIN(iter.data->width, width_to_consume),
+                    MIN(width, iter.data->width),
                     iter.data->height,
                     root, scr->root_visual);
 
@@ -442,8 +443,11 @@ init (void)
             else
                 mons->next = mon;
 
-            if (width_to_consume)
-                width_to_consume -= MIN(iter.data->width, width_to_consume);
+            width -= iter.data->width;
+
+            /* No need to check for other monitors */
+            if (width < 0)
+                break;
 
             xcb_xinerama_screen_info_next (&iter);
         }
