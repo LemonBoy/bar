@@ -1,12 +1,7 @@
 CC	?= gcc
 STRIP ?= strip
 CFLAGS = -std=c99 -O2
-LDFLAGS = -lxcb
-XINERAMA ?= 0
-ifneq "$(XINERAMA)" "0"
-	LDFLAGS += -lxcb-xinerama
-	CFLAGS  += -DXINERAMA=${XINERAMA}
-endif
+LDFLAGS = -lxcb -lxcb-xinerama
 CFDEBUG = -g3 -pedantic -Wall -Wunused-parameter -Wlong-long\
 		  -Wsign-conversion -Wconversion -Wimplicit-function-declaration
 
