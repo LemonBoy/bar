@@ -1,7 +1,11 @@
 CC	?= gcc
 STRIP ?= strip
 CFLAGS = -std=c99 -O2
+<<<<<<< HEAD
 LDFLAGS = -lxcb -lxcb-xinerama
+=======
+LDFLAGS = -lxcb -lxcb-xinerama -lxcb-randr
+>>>>>>> 59fb6c5... Ported randr code to wip branch, plus some fixes.
 CFDEBUG = -g3 -pedantic -Wall -Wunused-parameter -Wlong-long\
 		  -Wsign-conversion -Wconversion -Wimplicit-function-declaration
 
@@ -31,8 +35,14 @@ debug: ${EXEC}
 debug: CC += ${CFDEBUG}
 
 clean:
+<<<<<<< HEAD
 	rm -rf ./*.o
 	rm -rf ./${EXEC}
+=======
+	rm -f ./config.h
+	rm -f ./*.o
+	rm -f ./${EXEC}
+>>>>>>> 59fb6c5... Ported randr code to wip branch, plus some fixes.
 
 install: bar
 	test -d ${DESTDIR}${BINDIR} || mkdir -p ${DESTDIR}${BINDIR}
