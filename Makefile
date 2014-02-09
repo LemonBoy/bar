@@ -1,6 +1,6 @@
 CC	?= gcc
 STRIP ?= strip
-CFLAGS = -std=c99 -fshort-wchar -Os
+CFLAGS = -std=c99 -O2
 LDFLAGS = -lxcb -lxcb-xinerama -lxcb-randr
 CFDEBUG = -g3 -pedantic -Wall -Wunused-parameter -Wlong-long\
 		  -Wsign-conversion -Wconversion -Wimplicit-function-declaration
@@ -31,9 +31,9 @@ debug: ${EXEC}
 debug: CC += ${CFDEBUG}
 
 clean:
-	rm -rf ./*.o
-	rm -rf ./${EXEC}
-	rm -rf ./config.h
+	rm -f ./config.h
+	rm -f ./*.o
+	rm -f ./${EXEC}
 
 install: bar
 	test -d ${DESTDIR}${BINDIR} || mkdir -p ${DESTDIR}${BINDIR}
