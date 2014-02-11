@@ -360,8 +360,10 @@ monitor_new (int x, int y, int width, int height)
     monitor_t *ret;
 
     ret = malloc(sizeof(monitor_t));
-    if (!ret)
-        return NULL;
+    if (!ret) {
+        fprintf(stderr, "Failed to allocate new monitor\n");
+        exit(EXIT_FAILURE);
+    }
 
     ret->x = x;
     ret->width = width;
@@ -380,6 +382,22 @@ monitor_new (int x, int y, int width, int height)
             (const uint32_t []){ cfg.force_docking });
 
     return ret;
+}
+
+void
+monitor_add (monitor_t *mon)
+{
+    if (!monhead) {
+        monhead = mon;
+    } else if (!montail) {
+        montail = mon;
+        monhead->next = mon;
+        mon->prev = monhead;
+    } else {
+        mon->prev = montail;
+        montail->next = mon;
+        montail = montail->next;
+    }
 }
 
 void
@@ -408,6 +426,7 @@ get_randr_outputs(void)
         fprintf(stderr, "Failed to get current randr outputs\n");
         return;
     }
+
     xcb_rectangle_t rects[num];
 
     /* get all outputs */
@@ -475,24 +494,7 @@ get_randr_outputs(void)
                     MIN(width, rects[i].width),
                     rects[i].height);
 
-            if (!mon) {
-                fprintf(stderr, "Failed to allocate new monitor\n");
-                exit(EXIT_FAILURE);
-            }
-
-            if (!monhead) {
-                monhead = mon;
-            }
-            else if (!montail) {
-                montail = mon;
-                monhead->next = mon;
-                mon->prev = monhead;
-            }
-            else {
-                mon->prev = montail;
-                montail->next = mon;
-                montail = montail->next;
-            }
+            monitor_add (mon);
 
             width -= rects[i].width;
 
@@ -502,6 +504,41 @@ get_randr_outputs(void)
             j++;
         }
     }
+}
+
+void
+get_xinerama_screens (void)
+{
+    xcb_xinerama_query_screens_reply_t *xqs_reply;
+    xcb_xinerama_screen_info_iterator_t iter;
+    int width = cfg.width;
+
+    xqs_reply = xcb_xinerama_query_screens_reply (c,
+            xcb_xinerama_query_screens_unchecked (c), NULL);
+
+    iter = xcb_xinerama_query_screens_screen_info_iterator (xqs_reply);
+
+    /* The width is consumed across all the screens */
+
+    while (iter.rem) {
+        monitor_t *mon = monitor_new (
+                iter.data->x_org,
+                iter.data->y_org,
+                MIN(width, iter.data->width),
+                iter.data->height);
+
+        monitor_add (mon);
+
+        width -= iter.data->width;
+
+        /* No need to check for other monitors */
+        if (width <= 0)
+            break;
+
+        xcb_xinerama_screen_info_next (&iter);
+    }
+
+    free (xqs_reply);
 }
 
 void
@@ -544,11 +581,8 @@ init (void)
     qe_reply = xcb_get_extension_data (c, &xcb_randr_id);
 
     if (qe_reply && qe_reply->present) {
-        get_randr_outputs();
+        get_randr_outputs ();
     } else {
-        int xia = 0;
-
-
         qe_reply = xcb_get_extension_data (c, &xcb_xinerama_id);
 
         /* Check if Xinerama extension is present and active */
@@ -557,63 +591,15 @@ init (void)
             xia_reply = xcb_xinerama_is_active_reply (c, xcb_xinerama_is_active (c), NULL);
 
             if (xia_reply && xia_reply->state)
-                xia = 1;
+                get_xinerama_screens ();
+
             free (xia_reply);
         }
-
-        if (xia) {
-            xcb_xinerama_query_screens_reply_t *xqs_reply;
-            xcb_xinerama_screen_info_iterator_t iter;
-
-            xqs_reply = xcb_xinerama_query_screens_reply (c,
-                    xcb_xinerama_query_screens_unchecked (c), NULL);
-
-            iter = xcb_xinerama_query_screens_screen_info_iterator (xqs_reply);
-
-            /* The width is consumed across all the screens */
-
-            while (iter.rem) {
-                monitor_t *mon = monitor_new (
-                        iter.data->x_org,
-                        iter.data->y_org,
-                        MIN(width, iter.data->width),
-                        iter.data->height);
-
-                if (!monhead) {
-                    monhead = mon;
-                }
-                else if (!montail) {
-                    montail = mon;
-                    monhead->next = mon;
-                    mon->prev = monhead;
-                }
-                else {
-                    mon->prev = montail;
-                    montail->next = mon;
-                    montail = montail->next;
-                }
-
-                width -= iter.data->width;
-
-                /* No need to check for other monitors */
-                if (width <= 0)
-                    break;
-
-                xcb_xinerama_screen_info_next (&iter);
-            }
-            free (xqs_reply);
-        }
     }
 
-    if (!monhead) {
-        fprintf(stderr, "Falling back to using whole screen mode\n");
+    if (!monhead)
+        /* If no RandR outputs or Xinerama screens, fall back to using whole screen */
         monhead = monitor_new (0, 0, width, scr->height_in_pixels);
-    }
-
-    if (!monhead) {
-        fprintf(stderr, "Failed to retrieve any usable monitors!\n");
-        exit(EXIT_FAILURE);
-    }
 
     if (!mons) 
         exit(EXIT_FAILURE);
