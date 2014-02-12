@@ -31,7 +31,6 @@ debug: ${EXEC}
 debug: CC += ${CFDEBUG}
 
 clean:
-	rm -f ./config.h
 	rm -f ./*.o
 	rm -f ./${EXEC}
 
