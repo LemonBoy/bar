@@ -9,13 +9,14 @@
 #include <unistd.h>
 #include <xcb/xcb.h>
 #include <xcb/xinerama.h>
+#include <xcb/randr.h>
 
 #include "config.h"
 
 // Here be dragons
 
-#define MAX(a,b) ((a > b) ? a : b)
-#define MIN(a,b) ((a < b) ? a : b)
+#define MAX(a,b) ((a) > (b) ? (a) : (b))
+#define MIN(a,b) ((a) < (b) ? (a) : (b))
 
 typedef struct font_t {
     xcb_font_t      ptr;
@@ -52,43 +53,44 @@ enum {
     ALIGN_R
 };
 
-static xcb_connection_t *c;
+xcb_connection_t *c;
+xcb_screen_t     *scr;
 
-static xcb_drawable_t   canvas;
-static xcb_gcontext_t   draw_gc;
-static xcb_gcontext_t   clear_gc;
-static xcb_gcontext_t   underl_gc;
+xcb_drawable_t   canvas;
+xcb_gcontext_t   draw_gc;
+xcb_gcontext_t   clear_gc;
+xcb_gcontext_t   underl_gc;
 
-static monitor_t *mons;
-static font_t *main_font, *alt_font;
+monitor_t *monhead, *montail;
+font_t *main_font, *alt_font;
 
-static const uint32_t palette[] = {
+const uint32_t palette[] = {
     COLOR0,COLOR1,COLOR2,COLOR3,COLOR4,COLOR5,COLOR6,COLOR7,COLOR8,COLOR9,BACKGROUND,FOREGROUND
 };
 
-static const char *control_characters = "_-fbulcrs";
+const char *control_characters = "_-fbulcrs";
 
 void
-xcb_set_bg (int i)
+set_bg (int i)
 {
     xcb_change_gc (c, draw_gc  , XCB_GC_BACKGROUND, (const unsigned []){ palette[i] });
     xcb_change_gc (c, clear_gc , XCB_GC_FOREGROUND, (const unsigned []){ palette[i] });
 }
 
 void
-xcb_set_fg (int i)
+set_fg (int i)
 {
     xcb_change_gc (c, draw_gc , XCB_GC_FOREGROUND, (const uint32_t []){ palette[i] });
 }
 
 void
-xcb_set_ud (int i)
+set_ud (int i)
 {
     xcb_change_gc (c, underl_gc, XCB_GC_FOREGROUND, (const uint32_t []){ palette[i] });
 }
 
 void
-xcb_fill_rect (xcb_gcontext_t gc, int x, int y, int width, int height)
+fill_rect (xcb_gcontext_t gc, int x, int y, int width, int height)
 {
     xcb_poly_fill_rectangle (c, canvas, gc, 1, (const xcb_rectangle_t []){ { x, y, width, height } });
 }
@@ -120,7 +122,7 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, int underline, ui
     }
 
     /* Draw the background first */
-    xcb_fill_rect (clear_gc, x + mon->x, 0, ch_width, cfg.height);
+    fill_rect (clear_gc, x + mon->x, 0, ch_width, cfg.height);
 
     /* xcb accepts string in UCS-2 BE, so swap */
     ch = (ch >> 8) | (ch << 8);
@@ -131,7 +133,7 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, int underline, ui
 
     /* Draw the underline if -1, an overline if 1 */
     if (BAR_UNDERLINE_HEIGHT && underline) 
-        xcb_fill_rect (underl_gc, x + mon->x, (underline < 0)*(cfg.height-BAR_UNDERLINE_HEIGHT), ch_width, BAR_UNDERLINE_HEIGHT);
+        fill_rect (underl_gc, x + mon->x, (underline < 0)*(cfg.height-BAR_UNDERLINE_HEIGHT), ch_width, BAR_UNDERLINE_HEIGHT);
 
     return ch_width;
 }
@@ -149,9 +151,9 @@ parse (char *text)
     monitor_t *cur_mon;
 
     cur_font = main_font;
-    cur_mon = mons;
+    cur_mon = monhead;
 
-    xcb_fill_rect (clear_gc, 0, 0, cfg.width, cfg.height);
+    fill_rect (clear_gc, 0, 0, cfg.width, cfg.height);
 
     for (;;) {
         if (*p == '\0' || *p == '\n')
@@ -160,15 +162,15 @@ parse (char *text)
         if (*p == '^' && p++ && *p != '^' && strchr (control_characters, *p)) {
                 switch (*p++) {
                     case 'f': 
-                        xcb_set_fg (isdigit(*p) ? *p-'0' : 11);
+                        set_fg (isdigit(*p) ? *p-'0' : 11);
                         p++;
                         break;
                     case 'b': 
-                        xcb_set_bg (isdigit(*p) ? *p-'0' : 10);
+                        set_bg (isdigit(*p) ? *p-'0' : 10);
                         p++;
                         break;
                     case 'u': 
-                        xcb_set_ud (isdigit(*p) ? *p-'0' : 10);
+                        set_ud (isdigit(*p) ? *p-'0' : 10);
                         p++;
                         break;
 
@@ -179,22 +181,28 @@ parse (char *text)
                         underline_flag = (underline_flag ==  1) ? 0 :  1;
                         break;
                     case 's':
-                        if (*p == 'r') 
-                            cur_mon = mons;
-                        else if (*p == 'l') 
-                            { while (cur_mon->next) cur_mon = cur_mon->next; }
-                        else if (*p == 'n') 
-                            { if (cur_mon->next) cur_mon = cur_mon->next; }
-                        else if (*p == 'p') 
-                            { if (cur_mon->prev) cur_mon = cur_mon->prev; }
-                        else if (isdigit(*p)) {
-                            cur_mon = mons;
-                            /* Start at 1 */
-                            for (int i = 1; i <= *p-'0' && cur_mon->next; i++)
-                                cur_mon = cur_mon->next;
-                        }
-                        else
+                        /* montail only gets set with multiple monitors */
+                        if (montail) {
+                            if (*p == 'r') {
+                                cur_mon = montail;
+                            } else if (*p == 'l') {
+                                cur_mon = monhead;
+                            } else if (*p == 'n') {
+                                if (cur_mon->next)
+                                    cur_mon = cur_mon->next;
+                            } else if (*p == 'p') {
+                                if (cur_mon->prev)
+                                    cur_mon = cur_mon->prev;
+                            } else if (isdigit(*p)) {
+                                cur_mon = monhead;
+                                /* Start at 0 */
+                                for (int i = 0; i != *p-'0' && cur_mon->next; i++)
+                                    cur_mon = cur_mon->next;
+                            }
+                        } else {
+                            p++;
                             break;
+                        }
 
                         /* Consume the argument */
                         p++;
@@ -216,9 +224,6 @@ parse (char *text)
                         break;
                 }
         } else { /* utf-8 -> ucs-2 */
-            if (!cur_mon->window)
-                continue;
-
             uint8_t *utf = (uint8_t *)p;
             uint16_t ucs;
 
@@ -329,7 +334,7 @@ set_ewmh_atoms (void)
     }
 
     /* Prepare the strut array */
-    for (monitor_t *mon = mons; mon; mon = mon->next) {
+    for (monitor_t *mon = monhead; mon; mon = mon->next) {
         int strut[12] = {0};
         if (cfg.place_bottom) {
             strut[3]  = cfg.height;
@@ -351,39 +356,195 @@ set_ewmh_atoms (void)
 }
 
 monitor_t *
-monitor_new (int x, int y, int width, int height, xcb_window_t root, xcb_visualid_t visual)
+monitor_new (int x, int y, int width, int height)
 {
     monitor_t *ret;
 
-    ret = calloc(1, sizeof(monitor_t));
-    if (!ret)
-        return NULL;
+    ret = malloc(sizeof(monitor_t));
+    if (!ret) {
+        fprintf(stderr, "Failed to allocate new monitor\n");
+        exit(EXIT_FAILURE);
+    }
 
     ret->x = x;
     ret->width = width;
+    ret->next = ret->prev = NULL;
 
-    if (width) {
-        int win_y = (cfg.place_bottom ? (height - cfg.height) : 0) + y;
-        ret->window = xcb_generate_id(c);
+    int win_y = (cfg.place_bottom ? (height - cfg.height) : 0) + y;
+    ret->window = xcb_generate_id(c);
 
-        xcb_create_window(c, XCB_COPY_FROM_PARENT, ret->window, root, x, win_y, width, cfg.height, 0, 
-                XCB_WINDOW_CLASS_INPUT_OUTPUT, visual, XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, 
-                (const uint32_t []){ palette[10], XCB_EVENT_MASK_EXPOSURE });
+    xcb_create_window(c, XCB_COPY_FROM_PARENT, ret->window, scr->root,
+            x, win_y, width, cfg.height, 0, 
+            XCB_WINDOW_CLASS_INPUT_OUTPUT, scr->root_visual,
+            XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, 
+            (const uint32_t []){ palette[10], XCB_EVENT_MASK_EXPOSURE });
 
-        xcb_change_window_attributes (c, ret->window, XCB_CW_OVERRIDE_REDIRECT, (const uint32_t []){ cfg.force_docking });
-
-        xcb_map_window(c, ret->window);
-    }
+    xcb_change_window_attributes (c, ret->window, XCB_CW_OVERRIDE_REDIRECT,
+            (const uint32_t []){ cfg.force_docking });
 
     return ret;
 }
 
 void
+monitor_add (monitor_t *mon)
+{
+    if (!monhead) {
+        monhead = mon;
+    } else if (!montail) {
+        montail = mon;
+        monhead->next = mon;
+        mon->prev = monhead;
+    } else {
+        mon->prev = montail;
+        montail->next = mon;
+        montail = montail->next;
+    }
+}
+
+void
+get_randr_outputs(void)
+{
+    int i, j, num, cnt = 0;
+    xcb_generic_error_t *err;
+    xcb_randr_get_screen_resources_current_cookie_t rres_query;
+    xcb_randr_get_screen_resources_current_reply_t *rres_reply;
+    xcb_randr_output_t *outputs;
+    xcb_timestamp_t config_timestamp;
+
+    rres_query = xcb_randr_get_screen_resources_current(c, scr->root);
+    rres_reply = xcb_randr_get_screen_resources_current_reply(c, rres_query, &err);
+    if (rres_reply == NULL || err != NULL) {
+        fprintf(stderr, "Failed to get current randr screen resources\n");
+        free(rres_reply);
+        return;
+    }
+
+    num = xcb_randr_get_screen_resources_current_outputs_length(rres_reply);
+    outputs = xcb_randr_get_screen_resources_current_outputs(rres_reply);
+    config_timestamp = rres_reply->config_timestamp;
+    free(rres_reply);
+    if (num < 1) {
+        fprintf(stderr, "Failed to get current randr outputs\n");
+        return;
+    }
+
+    xcb_rectangle_t rects[num];
+
+    /* get all outputs */
+    for (i = 0; i < num; i++) {
+        xcb_randr_get_output_info_cookie_t output_query;
+        xcb_randr_get_output_info_reply_t *output_reply;
+        xcb_randr_get_crtc_info_cookie_t crtc_query;
+        xcb_randr_get_crtc_info_reply_t *crtc_reply;
+
+        output_query = xcb_randr_get_output_info(c, outputs[i], config_timestamp);
+        output_reply = xcb_randr_get_output_info_reply(c, output_query, &err);
+        if (err != NULL || output_reply == NULL || output_reply->crtc == XCB_NONE) {
+            rects[i].width = 0;
+            continue;
+        }
+        crtc_query = xcb_randr_get_crtc_info(c, output_reply->crtc, config_timestamp);
+        crtc_reply = xcb_randr_get_crtc_info_reply(c, crtc_query, &err);
+        if (err != NULL | crtc_reply == NULL) {
+            fprintf(stderr, "Failed to get randr ctrc info\n");
+            rects[i].width = 0;
+            free(output_reply);
+            continue;
+        }
+        rects[i].x = crtc_reply->x;
+        rects[i].y = crtc_reply->y;
+        rects[i].width = crtc_reply->width;
+        rects[i].height = crtc_reply->height;
+        free(crtc_reply);
+        free(output_reply);
+        cnt++;
+    }
+
+    if (cnt < 1) {
+        fprintf(stderr, "No usable randr outputs\n");
+        return;
+    }
+
+    /* check for clones and inactive outputs */
+    for (i = 0; i < num; i++) {
+        if (rects[i].width == 0)
+            continue;
+        for (j = 0; j < num; j++) {
+            if (i == j || rects[j].width == 0 || rects[i].x != rects[j].x || rects[i].y != rects[j].y)
+                continue;
+            /* clone found, only keep one */
+            rects[i].width = (rects[i].width < rects[j].width) ? rects[i].width : rects[j].width;
+            rects[i].height = (rects[i].height < rects[j].height) ? rects[i].height : rects[j].height;
+            rects[j].width = 0;
+            cnt--;
+        }
+    }
+
+    if (cnt < 1) {
+        fprintf(stderr, "No usable randr outputs\n");
+        return;
+    }
+
+    int width = cfg.width;
+
+    for (i = j = 0; i < num && j < cnt; i++) {
+        if (rects[i].width) {
+            monitor_t *mon = monitor_new (
+                    rects[i].x,
+                    rects[i].y,
+                    MIN(width, rects[i].width),
+                    rects[i].height);
+
+            monitor_add (mon);
+
+            width -= rects[i].width;
+
+            /* No need to check for other monitors */
+            if (width <= 0)
+                break;
+            j++;
+        }
+    }
+}
+
+void
+get_xinerama_screens (void)
+{
+    xcb_xinerama_query_screens_reply_t *xqs_reply;
+    xcb_xinerama_screen_info_iterator_t iter;
+    int width = cfg.width;
+
+    xqs_reply = xcb_xinerama_query_screens_reply (c,
+            xcb_xinerama_query_screens_unchecked (c), NULL);
+
+    iter = xcb_xinerama_query_screens_screen_info_iterator (xqs_reply);
+
+    /* The width is consumed across all the screens */
+
+    while (iter.rem) {
+        monitor_t *mon = monitor_new (
+                iter.data->x_org,
+                iter.data->y_org,
+                MIN(width, iter.data->width),
+                iter.data->height);
+
+        monitor_add (mon);
+
+        width -= iter.data->width;
+
+        /* No need to check for other monitors */
+        if (width <= 0)
+            break;
+
+        xcb_xinerama_screen_info_next (&iter);
+    }
+
+    free (xqs_reply);
+}
+
+void
 init (void)
 {
-    xcb_screen_t *scr;
-    xcb_window_t root;
-
     /* Connect to X */
     c = xcb_connect (NULL, NULL);
     if (xcb_connection_has_error (c)) {
@@ -393,10 +554,9 @@ init (void)
 
     /* Grab infos from the first screen */
     scr  = xcb_setup_roots_iterator (xcb_get_setup (c)).data;
-    root = scr->root;
 
     /* If I fits I sits */
-    if (cfg.width < 0)
+    if (cfg.width < 0 || cfg.width > scr->width_in_pixels)
         cfg.width = scr->width_in_pixels;
 
     /* Load the fonts */
@@ -412,56 +572,37 @@ init (void)
     main_font->height = alt_font->height = MAX(main_font->height, alt_font->height);
 
     /* Generate a list of screens */
-    xcb_xinerama_is_active_reply_t *xia_reply;
+    const xcb_query_extension_reply_t *qe_reply;
+    int width = cfg.width;
 
-    xia_reply = xcb_xinerama_is_active_reply (c, xcb_xinerama_is_active (c), NULL);
+    /* Initialiaze monitor list head and tail */
+    monhead = montail = NULL;
 
-    /* Check if Xinerama is active */
-    if (xia_reply && xia_reply->state) {
-        xcb_xinerama_query_screens_reply_t *xqs_reply;
-        xcb_xinerama_screen_info_iterator_t iter;
+    /* Check if RandR is present */
+    qe_reply = xcb_get_extension_data (c, &xcb_randr_id);
 
-        xqs_reply = xcb_xinerama_query_screens_reply (c, xcb_xinerama_query_screens_unchecked (c), NULL);
+    if (qe_reply && qe_reply->present) {
+        get_randr_outputs ();
+    } else {
+        qe_reply = xcb_get_extension_data (c, &xcb_xinerama_id);
 
-        iter = xcb_xinerama_query_screens_screen_info_iterator (xqs_reply);
+        /* Check if Xinerama extension is present and active */
+        if (qe_reply && qe_reply->present) {
+            xcb_xinerama_is_active_reply_t *xia_reply;
+            xia_reply = xcb_xinerama_is_active_reply (c, xcb_xinerama_is_active (c), NULL);
 
-        /* The width is consumed across all the screens */
-        int width = cfg.width;
+            if (xia_reply && xia_reply->state)
+                get_xinerama_screens ();
 
-        while (iter.rem) {
-            monitor_t *mon = monitor_new (
-                    iter.data->x_org,
-                    iter.data->y_org + cfg.place_bottom ? (iter.data->height - cfg.height) : 0,
-                    MIN(width, iter.data->width),
-                    iter.data->height,
-                    root, scr->root_visual);
-
-            mon->prev = mons;
-
-            if (!mons)
-                mons = mon;
-            else
-                mons->next = mon;
-
-            width -= iter.data->width;
-
-            /* No need to check for other monitors */
-            if (width < 0)
-                break;
-
-            xcb_xinerama_screen_info_next (&iter);
+            free (xia_reply);
         }
     }
-    else {
-        mons = monitor_new (
-                0, 
-                cfg.place_bottom ? (scr->height_in_pixels - cfg.height) : 0,
-                cfg.width,
-                scr->height_in_pixels,
-                root, scr->root_visual);
-    }
 
-    if (!mons) 
+    if (!monhead)
+        /* If no RandR outputs or Xinerama screens, fall back to using whole screen */
+        monhead = monitor_new (0, 0, width, scr->height_in_pixels);
+
+    if (!monhead) 
         exit(EXIT_FAILURE);
 
     /* For WM that support EWMH atoms */
@@ -469,17 +610,21 @@ init (void)
 
     /* Create a temporary canvas */
     canvas = xcb_generate_id (c);
-    xcb_create_pixmap (c, scr->root_depth, canvas, root, cfg.width, cfg.height);
+    xcb_create_pixmap (c, scr->root_depth, canvas, scr->root, cfg.width, cfg.height);
 
     /* Create the gc for drawing */
     draw_gc = xcb_generate_id (c);
-    xcb_create_gc (c, draw_gc, root, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND, (const uint32_t []){ palette[11], palette[10] });
+    xcb_create_gc (c, draw_gc, scr->root, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND, (const uint32_t []){ palette[11], palette[10] });
 
     clear_gc = xcb_generate_id (c);
-    xcb_create_gc (c, clear_gc, root, XCB_GC_FOREGROUND, (const uint32_t []){ palette[10] });
+    xcb_create_gc (c, clear_gc, scr->root, XCB_GC_FOREGROUND, (const uint32_t []){ palette[10] });
 
     underl_gc = xcb_generate_id (c);
-    xcb_create_gc (c, underl_gc, root, XCB_GC_FOREGROUND, (const uint32_t []){ palette[10] });
+    xcb_create_gc (c, underl_gc, scr->root, XCB_GC_FOREGROUND, (const uint32_t []){ palette[10] });
+
+    /* Make the bar visible */
+    for (monitor_t *mon = monhead; mon; mon = mon->next)
+        xcb_map_window(c, mon->window);
 
     xcb_flush (c);
 }
@@ -497,10 +642,10 @@ cleanup (void)
         free(alt_font);
     }
 
-    while (mons) {
-        monitor_t *next = mons->next;
-        free(mons);
-        mons = next;
+    while (monhead) {
+        monitor_t *next = monhead->next;
+        free(monhead);
+        monhead = next;
     }
 
     if (canvas)
@@ -613,7 +758,7 @@ main (int argc, char **argv)
     /* Get the fd to Xserver */
     pollin[1].fd = xcb_get_file_descriptor (c);
 
-    xcb_fill_rect (clear_gc, 0, 0, cfg.width, cfg.height);
+    fill_rect (clear_gc, 0, 0, cfg.width, cfg.height);
 
     for (;;) {
         int redraw = 0;
@@ -646,8 +791,8 @@ main (int argc, char **argv)
         }
 
         if (redraw) { /* Copy our temporary pixmap onto the window */
-            for (monitor_t *mon = mons; mon; mon = mon->next) {
-                if (mon->window)
+            for (monitor_t *mon = monhead; mon; mon = mon->next) {
+//                if (mon->width)
                     xcb_copy_area (c, canvas, mon->window, draw_gc, mon->x, 0, 0, 0, mon->width, cfg.height);
             }
         }
