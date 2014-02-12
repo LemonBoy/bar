@@ -1,7 +1,5 @@
 /* The thickness of the underline (in pixels). Set to 0 to disable. */
 #define BAR_UNDERLINE_HEIGHT 2
-/* Some fonts don't set the right width for some chars, pheex it */
-#define BAR_FONT_FALLBACK_WIDTH 6
 /* Color palette */
 #define BACKGROUND 0x232c31
 #define COLOR0 0x2d3c46

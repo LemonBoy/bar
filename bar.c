@@ -19,23 +19,23 @@
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 
 typedef struct font_t {
-    xcb_font_t      ptr;
-    uint32_t        descent;
-    uint32_t        height;
-    uint16_t        char_max;
-    uint16_t        char_min;
+    xcb_font_t ptr;
+    uint32_t descent;
+    uint32_t height;
+    uint16_t char_max;
+    uint16_t char_min;
     xcb_charinfo_t *width_lut;
 } font_t;
 
 typedef struct monitor_t {
-    uint32_t     x;
-    uint32_t     width;
+    uint32_t x;
+    uint32_t width;
     xcb_window_t window;
     struct monitor_t *prev, *next;
 } monitor_t;
 
-struct config_t {
-    int place_bottom;
+static struct config_t {
+    int  place_bottom;
     int force_docking;
     int permanent;
     int width;
@@ -53,22 +53,18 @@ enum {
     ALIGN_R
 };
 
-xcb_connection_t *c;
-xcb_screen_t     *scr;
+static xcb_connection_t *c;
+static xcb_screen_t     *scr;
 
-xcb_drawable_t   canvas;
-xcb_gcontext_t   draw_gc;
-xcb_gcontext_t   clear_gc;
-xcb_gcontext_t   underl_gc;
+static xcb_drawable_t   canvas;
+static xcb_gcontext_t   draw_gc, clear_gc, underl_gc;
 
-monitor_t *monhead, *montail;
-font_t *main_font, *alt_font;
+static monitor_t *monhead, *montail;
+static font_t *main_font, *alt_font;
 
-const uint32_t palette[] = {
+static const uint32_t palette[] = {
     COLOR0,COLOR1,COLOR2,COLOR3,COLOR4,COLOR5,COLOR6,COLOR7,COLOR8,COLOR9,BACKGROUND,FOREGROUND
 };
-
-const char *control_characters = "_-fbulcrs";
 
 void
 set_bg (int i)
@@ -98,15 +94,11 @@ fill_rect (xcb_gcontext_t gc, int x, int y, int width, int height)
 int
 draw_char (monitor_t *mon, font_t *cur_font, int x, int align, int underline, uint16_t ch)
 {
-    int ch_width;
+    /* In the unlikely case that the font doesn't have the glyph wanted just do nothing */
+    if (ch < cur_font->char_min || ch > cur_font->char_max)
+        return 0;
 
-    ch_width = (ch > cur_font->char_min && ch < cur_font->char_max) ?
-        cur_font->width_lut[ch - cur_font->char_min].character_width :
-        0;
-
-    /* Some fonts (such as anorexia) have the space char with the width set to 0 */
-    if (ch_width == 0)
-        ch_width = BAR_FONT_FALLBACK_WIDTH;
+    int ch_width = cur_font->width_lut[ch - cur_font->char_min].character_width;
 
     switch (align) {
         case ALIGN_C:
@@ -159,7 +151,7 @@ parse (char *text)
         if (*p == '\0' || *p == '\n')
             return;
 
-        if (*p == '^' && p++ && *p != '^' && strchr (control_characters, *p)) {
+        if (*p == '^' && p++ && *p != '^' && strchr ("_-fbulcrs", *p)) {
                 switch (*p++) {
                     case 'f': 
                         set_fg (isdigit(*p) ? *p-'0' : 11);
