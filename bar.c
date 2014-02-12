@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <xcb/xcb.h>
 #include <xcb/xinerama.h>
+#include <xcb/randr.h>
 
 #include "config.h"
 
@@ -601,7 +602,7 @@ init (void)
         /* If no RandR outputs or Xinerama screens, fall back to using whole screen */
         monhead = monitor_new (0, 0, width, scr->height_in_pixels);
 
-    if (!mons) 
+    if (!monhead) 
         exit(EXIT_FAILURE);
 
     /* For WM that support EWMH atoms */
