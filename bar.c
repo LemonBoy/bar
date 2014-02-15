@@ -414,7 +414,6 @@ get_randr_outputs(void)
     num = xcb_randr_get_screen_resources_current_outputs_length(rres_reply);
     outputs = xcb_randr_get_screen_resources_current_outputs(rres_reply);
     config_timestamp = rres_reply->config_timestamp;
-    free(rres_reply);
     if (num < 1) {
         fprintf(stderr, "Failed to get current randr outputs\n");
         return;
@@ -497,6 +496,7 @@ get_randr_outputs(void)
             j++;
         }
     }
+    free(rres_reply);
 }
 
 void
