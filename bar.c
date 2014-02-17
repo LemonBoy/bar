@@ -402,12 +402,13 @@ rect_sort_cb (const void *p1, const void *p2)
 void
 get_randr_outputs(void)
 {
-    int i, j, num, cnt = 0;
     xcb_generic_error_t *err;
     xcb_randr_get_screen_resources_current_cookie_t rres_query;
     xcb_randr_get_screen_resources_current_reply_t *rres_reply;
     xcb_randr_output_t *outputs;
     xcb_timestamp_t config_timestamp;
+    int i, j, num, cnt = 0;
+    int width = cfg.width;
 
     rres_query = xcb_randr_get_screen_resources_current(c, scr->root);
     rres_reply = xcb_randr_get_screen_resources_current_reply(c, rres_query, &err);
@@ -483,7 +484,8 @@ get_randr_outputs(void)
         return;
     }
 
-    int width = cfg.width;
+    /* Sort by X */
+    qsort(rects, cnt, sizeof(xcb_rectangle_t), rect_sort_cb);
 
     for (i = j = 0; i < num && j < cnt; i++) {
         if (rects[i].width) {
@@ -532,7 +534,7 @@ get_xinerama_screens (void)
     screens = i;
 
     /* Sort by X */
-    qsort(rects, i, sizeof(xcb_rectangle_t), rect_sort_cb);
+    qsort(rects, screens, sizeof(xcb_rectangle_t), rect_sort_cb);
 
     /* The width is consumed across all the screens */
     for (i = 0; i < screens; i++) {
