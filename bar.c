@@ -393,6 +393,12 @@ monitor_add (monitor_t *mon)
     }
 }
 
+int
+rect_sort_cb (const void *p1, const void *p2)
+{
+    return ((xcb_rectangle_t *)p1)->x - ((xcb_rectangle_t *)p2)->x;
+}
+
 void
 get_randr_outputs(void)
 {
@@ -505,30 +511,44 @@ get_xinerama_screens (void)
     xcb_xinerama_query_screens_reply_t *xqs_reply;
     xcb_xinerama_screen_info_iterator_t iter;
     int width = cfg.width;
+    int i, screens;
 
     xqs_reply = xcb_xinerama_query_screens_reply (c,
             xcb_xinerama_query_screens_unchecked (c), NULL);
 
     iter = xcb_xinerama_query_screens_screen_info_iterator (xqs_reply);
 
-    /* The width is consumed across all the screens */
+    xcb_rectangle_t rects[iter.rem];
 
-    while (iter.rem) {
+    /* Fetch all the screens first */
+    for (i = 0; iter.rem; i++) {
+        rects[i].x = iter.data->x_org;
+        rects[i].y = iter.data->y_org;
+        rects[i].width = iter.data->width;
+        rects[i].height = iter.data->height;
+        xcb_xinerama_screen_info_next (&iter);
+    }
+
+    screens = i;
+
+    /* Sort by X */
+    qsort(rects, i, sizeof(xcb_rectangle_t), rect_sort_cb);
+
+    /* The width is consumed across all the screens */
+    for (i = 0; i < screens; i++) {
         monitor_t *mon = monitor_new (
-                iter.data->x_org,
-                iter.data->y_org,
-                MIN(width, iter.data->width),
-                iter.data->height);
+                rects[i].x,
+                rects[i].y,
+                MIN(width, rects[i].width),
+                rects[i].height);
 
         monitor_add (mon);
 
-        width -= iter.data->width;
+        width -= rects[i].width;
 
         /* No need to check for other monitors */
         if (width <= 0)
             break;
-
-        xcb_xinerama_screen_info_next (&iter);
     }
 
     free (xqs_reply);
