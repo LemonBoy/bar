@@ -396,7 +396,15 @@ monitor_add (monitor_t *mon)
 int
 rect_sort_cb (const void *p1, const void *p2)
 {
-    return ((xcb_rectangle_t *)p1)->x - ((xcb_rectangle_t *)p2)->x;
+    const xcb_rectangle_t *r1 = (xcb_rectangle_t *)p1;
+    const xcb_rectangle_t *r2 = (xcb_rectangle_t *)p2;
+
+    if (r1->x < r2->x || r1->y < r2->y)
+        return -1;
+    if (r1->x > r2->x || r1->y > r2->y)
+        return  1;
+
+    return 0;
 }
 
 void
@@ -421,9 +429,10 @@ get_randr_outputs(void)
     num = xcb_randr_get_screen_resources_current_outputs_length(rres_reply);
     outputs = xcb_randr_get_screen_resources_current_outputs(rres_reply);
     config_timestamp = rres_reply->config_timestamp;
-    free(rres_reply);
+
     if (num < 1) {
         fprintf(stderr, "Failed to get current randr outputs\n");
+        free(rres_reply);
         return;
     }
 
@@ -450,14 +459,18 @@ get_randr_outputs(void)
             free(output_reply);
             continue;
         }
-        rects[i].x = crtc_reply->x;
-        rects[i].y = crtc_reply->y;
-        rects[i].width = crtc_reply->width;
-        rects[i].height = crtc_reply->height;
+
+        if (crtc_reply->rotation&(XCB_RANDR_ROTATION_ROTATE_90|XCB_RANDR_ROTATION_ROTATE_270))
+            rects[i] = (xcb_rectangle_t){ crtc_reply->x, crtc_reply->y, crtc_reply->height, crtc_reply->width };
+        else
+            rects[i] = (xcb_rectangle_t){ crtc_reply->x, crtc_reply->y, crtc_reply->width, crtc_reply->height };
+
         free(crtc_reply);
         free(output_reply);
         cnt++;
     }
+
+    free(rres_reply);
 
     if (cnt < 1) {
         fprintf(stderr, "No usable randr outputs\n");
@@ -468,14 +481,16 @@ get_randr_outputs(void)
     for (i = 0; i < num; i++) {
         if (rects[i].width == 0)
             continue;
+
         for (j = 0; j < num; j++) {
-            if (i == j || rects[j].width == 0 || rects[i].x != rects[j].x || rects[i].y != rects[j].y)
-                continue;
-            /* clone found, only keep one */
-            rects[i].width = (rects[i].width < rects[j].width) ? rects[i].width : rects[j].width;
-            rects[i].height = (rects[i].height < rects[j].height) ? rects[i].height : rects[j].height;
-            rects[j].width = 0;
-            cnt--;
+            /* Does I countain J ? */
+            if (i != j && rects[j].width) {
+                if (rects[j].x >= rects[i].x && rects[j].x <= rects[i].x + rects[j].width &&
+                    rects[j].y >= rects[i].y && rects[j].y <= rects[i].y + rects[i].height) {
+                    rects[j].width = 0;
+                    cnt--;
+                }
+            }
         }
     }
 
@@ -806,8 +821,7 @@ main (int argc, char **argv)
 
         if (redraw) { /* Copy our temporary pixmap onto the window */
             for (monitor_t *mon = monhead; mon; mon = mon->next) {
-//                if (mon->width)
-                    xcb_copy_area (c, canvas, mon->window, draw_gc, mon->x, 0, 0, 0, mon->width, cfg.height);
+                xcb_copy_area (c, canvas, mon->window, draw_gc, mon->x, 0, 0, 0, mon->width, cfg.height);
             }
         }
 
