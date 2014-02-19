@@ -34,6 +34,17 @@ typedef struct monitor_t {
     struct monitor_t *prev, *next;
 } monitor_t;
 
+typedef struct cmd_area_t {
+    struct cmd_area_t *next;
+    struct cmd_area_t *prev;
+    char *cmd;
+    int begin;
+    int end;
+    int begin_x;
+    int end_x;
+    int align;
+} cmd_area_t;
+
 static struct config_t {
     int  place_bottom;
     int force_docking;
@@ -65,6 +76,9 @@ static font_t *main_font, *alt_font;
 static const uint32_t palette[] = {
     COLOR0,COLOR1,COLOR2,COLOR3,COLOR4,COLOR5,COLOR6,COLOR7,COLOR8,COLOR9,BACKGROUND,FOREGROUND
 };
+
+static cmd_area_t *cmd_area_list_head;
+static cmd_area_t *cmd_area_list_tail;
 
 void
 set_bg (int i)
@@ -131,9 +145,101 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, int underline, ui
 }
 
 void
+xcb_handle_mouse_event (int16_t x)
+{
+    cmd_area_t *area = cmd_area_list_head;
+    while (area) {
+        if (area->begin <=x && area->end >= x) {
+            system (area->cmd);
+            return;
+        }
+        area = area->next;
+    }
+}
+
+void
+cmd_area_begin (monitor_t *mon, int x, int align)
+{
+    cmd_area_t *area = calloc (1, sizeof (*area));
+
+    area->align = align;
+    area->begin_x = x;
+
+    switch (align) {
+        case ALIGN_L:
+            area->begin = x + mon->x;
+            break;
+        case ALIGN_C:
+            area->begin = mon->width / 2 + x / 2 + mon->x;
+            break;
+        case ALIGN_R:
+            area->begin = mon->width + mon->x;
+            break;
+    }
+
+    if (!cmd_area_list_head) {
+        cmd_area_list_head = area;
+        cmd_area_list_tail = area;
+    }
+    else {
+        cmd_area_list_tail->next = area;
+        area->prev = cmd_area_list_tail;
+        cmd_area_list_tail = area;
+    }
+}
+
+void
+cmd_area_end (monitor_t *mon, int x, int align)
+{
+    cmd_area_t *area = cmd_area_list_tail;
+    area->end_x = x;
+
+    switch (align) {
+        case ALIGN_L:
+            area->end = x + mon->x;
+            break;
+        case ALIGN_C:
+            area->begin -= (x - area->begin_x) / 2;
+            area->end = mon->width / 2 + x / 2 + mon->x;
+           /*
+            * if there were any other center aligned areas
+            * before this one, adjust their position
+            */
+            cmd_area_t *a = area->prev;
+            if (a && a->align == ALIGN_C) {
+                int diff = (area->begin_x - a->end_x + area->end - area->begin) / 2;
+                while (a && a->align == ALIGN_C) {
+                    a->begin -= diff;
+                    a->end -= diff;
+                    a = a->prev;
+                }
+            }
+            break;
+        case ALIGN_R:
+            area->begin -= (x - area->begin_x);
+            area->end = mon->width + mon->x;
+            /*
+             * if there were any other right aligned areas
+             * before this one, adjust their position
+            */
+            a = area->prev;
+            if (a && a->align == ALIGN_R) {
+                int diff = area->begin_x - a->end_x + area->end - area->begin;
+                    while (a && a->align == ALIGN_R) {
+                        a->begin -= diff;
+                        a->end -= diff;
+                        a = a->prev;
+                    }
+                }
+            break;
+    }
+}
+
+void
 parse (char *text)
 {
     char *p = text;
+    char *cmd_start = 0;
 
     int pos_x = 0;
     int align = 0;
@@ -151,7 +257,7 @@ parse (char *text)
         if (*p == '\0' || *p == '\n')
             return;
 
-        if (*p == '^' && p++ && *p != '^' && strchr ("_-fbulcrs", *p)) {
+        if (*p == '^' && p++ && *p != '^' && strchr ("_-afbulcrs", *p)) {
                 switch (*p++) {
                     case 'f': 
                         set_fg (isdigit(*p) ? *p-'0' : 11);
@@ -213,6 +319,25 @@ parse (char *text)
                     case 'r': 
                         align = ALIGN_R; 
                         pos_x = 0; 
+                        break;
+                    case 'a':
+                        switch (*p) {
+                            case 'b':
+                                cmd_area_begin (cur_mon, pos_x, align);
+                                break;
+                            case 'c':
+                                cmd_start = ++p;
+                                while (*p != '\0' && *p != '\n' && *p != '^')
+                                    p++;
+                                continue;
+                            case 'e':
+                                cmd_area_end (cur_mon, pos_x, align);
+                                size_t cmd_len = (size_t)(p - cmd_start) - 2;
+                                cmd_area_list_tail->cmd = calloc (cmd_len + 1, sizeof(char));
+                                strncpy (cmd_area_list_tail->cmd, cmd_start, cmd_len);
+                                break;
+                        }
+                        p++;
                         break;
                 }
         } else { /* utf-8 -> ucs-2 */
@@ -369,7 +494,8 @@ monitor_new (int x, int y, int width, int height)
             x, win_y, width, cfg.height, 0, 
             XCB_WINDOW_CLASS_INPUT_OUTPUT, scr->root_visual,
             XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, 
-            (const uint32_t []){ palette[10], XCB_EVENT_MASK_EXPOSURE });
+            (const uint32_t []){ palette[10], XCB_EVENT_MASK_EXPOSURE
+                                            | XCB_EVENT_MASK_BUTTON_RELEASE });
 
     xcb_change_window_attributes (c, ret->window, XCB_CW_OVERRIDE_REDIRECT,
             (const uint32_t []){ cfg.force_docking });
@@ -658,6 +784,17 @@ init (void)
     xcb_flush (c);
 }
 
+static void
+clear_cmd_area_list (void)
+{
+    while (cmd_area_list_head) {
+        cmd_area_t *area = cmd_area_list_head;
+        cmd_area_list_head = cmd_area_list_head->next;
+        free (area->cmd);
+        free (area);
+    }
+}
+
 void
 cleanup (void)
 {
@@ -687,6 +824,8 @@ cleanup (void)
         xcb_free_gc (c, underl_gc);
     if (c)
         xcb_disconnect (c);
+
+    clear_cmd_area_list();
 }
 
 void
@@ -742,7 +881,7 @@ parse_font_list (char *str)
 int 
 main (int argc, char **argv)
 {
-    char input[1024] = {0, };
+    char input[2048] = {0, };
     struct pollfd pollin[2] = { 
         { .fd = STDIN_FILENO, .events = POLLIN }, 
         { .fd = -1          , .events = POLLIN }, 
@@ -750,6 +889,7 @@ main (int argc, char **argv)
 
     xcb_generic_event_t *ev;
     xcb_expose_event_t *expose_ev;
+    xcb_button_release_event_t *button_ev;
 
     char ch;
     while ((ch = getopt (argc, argv, "hg:bdf:a:o:p")) != -1) {
@@ -801,17 +941,22 @@ main (int argc, char **argv)
                 if (fgets (input, sizeof(input), stdin) == NULL)
                     break; /* EOF received */
 
+                clear_cmd_area_list();
                 parse (input);
                 redraw = 1;
             }
             if (pollin[1].revents & POLLIN) { /* Xserver broadcasted an event */
                 while ((ev = xcb_poll_for_event (c))) {
-                    expose_ev = (xcb_expose_event_t *)ev;
 
-                    switch (ev->response_type & 0x7F) {
+                    switch (ev->response_type & ~0x80) {
                         case XCB_EXPOSE: 
+                            expose_ev = (xcb_expose_event_t *)ev;
                             if (expose_ev->count == 0) redraw = 1; 
                         break;
+                        case XCB_BUTTON_RELEASE:
+                            button_ev = (xcb_button_release_event_t *)ev;
+                            if (button_ev->detail == MOUSE_BUTTON)
+                                xcb_handle_mouse_event (button_ev->root_x);
                     }
 
                     free (ev);

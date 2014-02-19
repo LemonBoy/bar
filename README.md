@@ -68,3 +68,13 @@ sp      Switches to previous screen
 sr      Switches to the rightmost screen (the latest)
 sl      Switches to the leftmost screen (the first)
 ```
+
+Mouse support
+-------------
+You can have any number of clickable areas defined.
+
+```
+ab     Begins a new clickable area
+ac     The command to execute when clicked
+ae     Ends the current clickable area
+```
