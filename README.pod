@@ -1,0 +1,153 @@
+=head1 NAME
+
+bar - bar ain't recursive
+
+=head1 SYNOPSIS
+
+I<bar> [-h | -g I<width>B<x>I<height> | -b | -d | -f I<font> | -a I<alpha>| -p | -B I<color> | -F I<color>]
+
+=head1 DESCRIPTION
+
+B<bar> is a lightweight bar entirely based on XCB. Provides full UTF-8 support, basic formatting, RandR and Xinerama support and EWMH compliance without wasting your precious memory.
+
+=head1 OPTIONS
+
+=over
+
+=item B<-h>
+
+Display the help and exit.
+
+=item B<-g> I<width>B<x>I<height>
+
+Set the window geometry. Both the parameters can be omitted, bar defaults the former to the whole width and the height to the font height + 1 pixel.
+
+=item B<-b>
+
+Dock the bar at the bottom of the screen.
+
+=item B<-d>
+
+Force docking without asking the window manager. This is needed if the window manager isn't EWMH compliant.
+
+=item B<-f> I<font>
+
+Comma separated list of fonts, bar supports a maximum of two fonts.
+
+=item B<-a> I<alpha>
+
+Set the bar alpha in range 0.0 to 1.0. This requires a compositor manager such as Compton.
+
+=item B<-p>
+
+Make bar permanent, don't exit after the standard input is closed.
+
+=item B<-B> I<color>
+
+Set the background color of the bar. I<color> might be either in hex format (#rrggbb) or in the symbolic name format (eg. white, brightred, darkgray).
+
+=item B<-F> I<color>
+
+Set the foreground color of the bar. Accepts the same color formats as B<-B>.
+
+=back
+
+=head1 FORMATTING
+
+bar provides a screenrc-inspired formatting syntax to allow full customization at runtime. Every formatting block is opened with B<%{> and closed by B<}> and accepts the following commands, the parser tries it's best to handle malformed input.
+
+=over
+
+=item B<R>
+
+Swap the current background and foreground colors.
+
+=item B<l>
+
+Aligns the following text to the left side of the screen.
+
+=item B<c>
+
+Aligns the following text to the center of the screen.
+
+=item B<r>
+
+Aligns the following text to the right side of the screen.
+
+=item B<B>I<color>
+
+Set the text background color. The parameter I<color> can be I<-> or a color in one of the formats mentioned before. The special value I<-> resets the color to the default one.
+
+=item B<F>I<color>
+
+Set the text foreground color. The parameter I<color> can be I<-> or a color in one of the formats mentioned before. The special value I<-> resets the color to the default one.
+
+=item B<U>I<color>
+
+Set the text underline color. The parameter I<color> can be I<-> or a color in one of the formats mentioned before. The special value I<-> resets the color to the default one.
+
+=item B<S>I<dir>
+
+Change the monitor bar is rendering to. I<dir> can be either
+
+=over
+
+=item B<+>/B<->
+
+Next/previous monitor.
+
+=item B<f>/B<l>
+
+First/last monitor.
+
+=item I<0-9>
+
+Nth monitor.
+
+=back
+
+=back
+
+B<Attribute modifiers>
+
+=over
+
+=item B<+>I<attribute>
+
+Set the attribute I<attribute> for the following text.
+
+=item B<->I<attribute>
+
+Unset the attribute I<attribute> for the following text.
+
+=item B<!>I<attribute>
+
+Toggle the attribute I<attribute> for the following text.
+
+=back
+
+Where I<attribute> is one of the following
+
+=over
+
+=item B<o>
+
+Draw a line over the text.
+
+=item B<u>
+
+Draw a line under the text.
+
+=back
+
+=head1 WWW
+
+L<git repository|https://github.com/LemonBoy/bar>
+
+=head1 AUTHOR
+
+2012-2014 (C) The Lemon Man
+
+Xinerama support was kindly contributed by Stebalien
+
+RandR support was kindly contributed by jvvv 
