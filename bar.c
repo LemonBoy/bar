@@ -470,7 +470,7 @@ get_randr_monitors (void)
         oi_reply = xcb_randr_get_output_info_reply(c, xcb_randr_get_output_info(c, outputs[i], XCB_CURRENT_TIME), NULL);
 
         /* Output disconnected or not attached to any CRTC ? */
-        if (!oi_reply || oi_reply->crtc == XCB_NONE) {
+        if (!oi_reply || oi_reply->crtc == XCB_NONE || oi_reply->connection != XCB_RANDR_CONNECTION_CONNECTED) {
             rects[i].width = 0;
             continue;
         }
