@@ -147,8 +147,6 @@ parse_color (const char *str, char **end, const uint32_t def)
     ret = (nc_reply) ? nc_reply->pixel : def;
     free(nc_reply);
 
-    printf("k?\n");
-
     if (end)
         *end = (char *)str + str_len;
 
@@ -455,11 +453,12 @@ get_randr_monitors (void)
     num = xcb_randr_get_screen_resources_current_outputs_length(rres_reply);
     outputs = xcb_randr_get_screen_resources_current_outputs(rres_reply);
 
-    free(rres_reply);
 
     /* There should be at least one output */
-    if (num < 1)
+    if (num < 1) {
+        free(rres_reply);
         return;
+    }
 
     xcb_rectangle_t rects[num];
 
@@ -483,6 +482,7 @@ get_randr_monitors (void)
 
         if (!ci_reply) {
             fprintf(stderr, "Failed to get RandR ctrc info\n");
+            free(rres_reply);
             return;
         }
 
@@ -496,6 +496,8 @@ get_randr_monitors (void)
         valid++;
     }
 
+    free(rres_reply);
+
     /* Check for clones and inactive outputs */
     for (int i = 0; i < num; i++) {
         if (rects[i].width == 0)
@@ -503,9 +505,10 @@ get_randr_monitors (void)
 
         for (int j = 0; j < num; j++) {
             /* Does I countain J ? */
+
             if (i != j && rects[j].width) {
-                if (rects[j].x >= rects[i].x && rects[j].x <= rects[i].x + rects[j].width &&
-                    rects[j].y >= rects[i].y && rects[j].y <= rects[i].y + rects[i].height) {
+                if (rects[j].x >= rects[i].x && rects[j].x + rects[j].width <= rects[i].x + rects[i].width &&
+                    rects[j].y >= rects[i].y && rects[j].y + rects[j].height <= rects[i].y + rects[i].height) {
                     rects[j].width = 0;
                     valid--;
                 }
