@@ -852,7 +852,7 @@ main (int argc, char **argv)
     /* Sanitize the arguments */
     if (bx >= scr->width_in_pixels || bx + bw > scr->width_in_pixels) {
         fprintf(stderr, "The geometry specified doesn't fit the screen!\n");
-        return;
+        return EXIT_FAILURE;
     }
 
     if (bu >= bh)
