@@ -7,6 +7,7 @@
 #include <poll.h>
 #include <getopt.h>
 #include <unistd.h>
+#include <errno.h>
 #include <xcb/xcb.h>
 #include <xcb/xinerama.h>
 #include <xcb/randr.h>
@@ -51,10 +52,11 @@ static xcb_gcontext_t gc[3];
 static monitor_t *monhead, *montail;
 static font_t *main_font, *alt_font;
 static uint32_t attrs = 0;
-static float ba = 1.0f;
+static float ba = 1.0f; /* bar alpha */
 static bool dock = false;
 static bool topbar = true;
-static int bw = -1, bh = -1;
+static int bw = -1, bh = -1, bx = 0;
+static int bu = 1; /* Underline height */
 static char *mfont, *afont;
 static uint32_t fgc, bgc, ugc;
 static uint32_t dfgc, dbgc;
@@ -102,14 +104,13 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
     ch = (ch >> 8) | (ch << 8);
 
     /* String baseline coordinates */
-    xcb_image_text_16(c, 1, canvas, gc[0], x + mon->x, bh / 2 + cur_font->height / 2 - cur_font->descent,
-            (xcb_char2b_t *)&ch);
+    xcb_image_text_16(c, 1, canvas, gc[0], x + mon->x, bh / 2 + cur_font->height / 2 - cur_font->descent, (xcb_char2b_t *)&ch);
 
     /* We can render both at the same time */
     if (attrs & ATTR_OVERL)
-        fill_rect(gc[2], x + mon->x, 0, ch_width, 1);
+        fill_rect(gc[2], x + mon->x, 0, ch_width, bu);
     if (attrs & ATTR_UNDERL)
-        fill_rect(gc[2], x + mon->x, bh-1, ch_width, 1);
+        fill_rect(gc[2], x + mon->x, bh-bu, ch_width, bu);
 
     return ch_width;
 }
@@ -434,13 +435,46 @@ rect_sort_cb (const void *p1, const void *p2)
 }
 
 void
+monitor_create_chain (xcb_rectangle_t *rects, const int num)
+{
+    int width = bw;
+    int left = bx;
+
+    /* Sort before use */
+    qsort(rects, num, sizeof(xcb_rectangle_t), rect_sort_cb);
+
+    /* Left is a positive number or zero therefore monitors with zero width are excluded */
+    for (int i = 0; i < num; i++) {
+        if (rects[i].width > left) {
+            monitor_t *mon = monitor_new(
+                    rects[i].x + left,
+                    rects[i].y,
+                    min(width, rects[i].width - left),
+                    rects[i].height);
+
+            monitor_add(mon);
+
+            width -= rects[i].width - left;
+
+            /* No need to check for other monitors */
+            if (width <= 0)
+                break;
+        }
+
+        left -= rects[i].width;
+
+        if (left < 0)
+            left = 0;
+    }
+}
+
+void
 get_randr_monitors (void)
 {
     xcb_generic_error_t *err;
     xcb_randr_get_screen_resources_current_reply_t *rres_reply;
     xcb_randr_output_t *outputs;
     int num, valid = 0;
-    int width = bw;
 
     rres_reply = xcb_randr_get_screen_resources_current_reply(c,
             xcb_randr_get_screen_resources_current(c, scr->root), NULL);
@@ -521,26 +555,7 @@ get_randr_monitors (void)
         return;
     }
 
-    /* Sort before use */
-    qsort(rects, num, sizeof(xcb_rectangle_t), rect_sort_cb);
-
-    for (int i = 0; i < num; i++) {
-        if (rects[i].width) {
-            monitor_t *mon = monitor_new(
-                    rects[i].x,
-                    rects[i].y,
-                    min(width, rects[i].width),
-                    rects[i].height);
-
-            monitor_add(mon);
-
-            width -= rects[i].width;
-
-            /* No need to check for other monitors */
-            if (width <= 0)
-                break;
-        }
-    }
+    monitor_create_chain(rects, num);
 }
 
 void
@@ -567,27 +582,9 @@ get_xinerama_monitors (void)
         xcb_xinerama_screen_info_next(&iter);
     }
 
-    /* Sort before use */
-    qsort(rects, screens, sizeof(xcb_rectangle_t), rect_sort_cb);
-
-    /* The width is consumed across all the screens */
-    for (int i = 0; i < screens; i++) {
-        monitor_t *mon = monitor_new(
-                rects[i].x,
-                rects[i].y,
-                min(width, rects[i].width),
-                rects[i].height);
-
-        monitor_add(mon);
-
-        width -= rects[i].width;
-
-        /* No need to check for other monitors */
-        if (width <= 0)
-            break;
-    }
-
     free(xqs_reply);
+
+    monitor_create_chain(rects, screens);
 }
 
 void
@@ -725,29 +722,55 @@ sighandle (int signal)
         exit(EXIT_SUCCESS);
 }
 
-/* Parse an urxvt-like geometry string {width}x{height}, both the fields are
- * optional. A width of -1 means that the bar spawns the whole screen.  */
-void
-parse_geometry_string (char *str)
+/* Parse an X-styled geometry string, we don't support signed offsets tho. */
+bool
+parse_geometry_string (char *str, int *tmp)
 {
-    char *p, *q;
-    int tmp;
+    char *p = str;
+    int i = 0, j;
 
-    if (!str)
-        return;
+    if (!str || !str[0])
+        return false;
 
-    p = str;
+    /* The leading = is optional */
+    if (*p == '=')
+        p++;
 
-    tmp = strtoul(p, &q, 10);
-    if (p != q)
-        bw = tmp;
+    while (*p) {
+        /* A geometry string has only 4 fields */
+        if (i >= 4) {
+            fprintf(stderr, "Invalid geometry specified\n");
+            return false;
+        }
+        /* Move on if we encounter a 'x' or '+' */
+        if (*p == 'x') {
+            if (i > 0) /* The 'x' must precede '+' */
+                break;
+            i++; p++; continue;
+        }
+        if (*p == '+') {
+            if (i < 1) /* Stray '+', skip the first two fields */
+                i = 2;
+            else
+                i++;
+            p++; continue;
+        }
+        /* A digit must follow */
+        if (!isdigit(*p)) {
+            fprintf(stderr, "Invalid geometry specified\n");
+            return false;
+        }
+        /* Try to parse the number */
+        errno = 0;
+        j = strtoul(p, &p, 10);
+        if (errno) {
+            fprintf(stderr, "Invalid geometry specified\n");
+            return false;
+        }
+        tmp[i] = j;
+    }
 
-    /* P now might point to a NULL char, strtoul takes care of that */
-    p = q + 1;
-
-    tmp = strtoul(p, &q, 10);
-    if (p != q)
-        bh = tmp;
+    return true;
 }
 
 void
@@ -771,14 +794,15 @@ parse_font_list (char *str)
 int
 main (int argc, char **argv)
 {
-    char input[2048] = {0, };
     struct pollfd pollin[2] = {
         { .fd = STDIN_FILENO, .events = POLLIN },
         { .fd = -1          , .events = POLLIN },
     };
     xcb_generic_event_t *ev;
     xcb_expose_event_t *expose_ev;
+    char input[2048] = {0, };
     bool permanent = false;
+    int geom_v[4] = { -1, -1, 0, 0 };
 
     /* Install the parachute! */
     atexit(cleanup);
@@ -793,10 +817,10 @@ main (int argc, char **argv)
     dfgc = fgc = scr->white_pixel;
 
     char ch;
-    while ((ch = getopt(argc, argv, "hg:bdf:a:pB:F:")) != -1) {
+    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:")) != -1) {
         switch (ch) {
             case 'h':
-                printf ("usage: %s [-h | -g | -b | -d | -f | -a | -p | -B | -F]\n"
+                printf ("usage: %s [-h | -g | -b | -d | -f | -a | -p | -u | -B | -F]\n"
                         "\t-h Show this help\n"
                         "\t-g Set the bar geometry {width}x{height})\n"
                         "\t-b Put bar at the bottom of the screen\n"
@@ -804,21 +828,34 @@ main (int argc, char **argv)
                         "\t-f Bar font list, comma separated\n"
                         "\t-a Set the bar alpha ranging from 0.0 to 1.0 (requires a compositor)\n"
                         "\t-p Don't close after the data ends\n"
+                        "\t-u Set the underline/overline height in pixels\n"
                         "\t-B Set background color in #RRGGBB\n"
                         "\t-F Set foreground color in #RRGGBB\n", argv[0]);
                 exit (EXIT_SUCCESS);
             case 'a': ba = strtof(optarg, NULL); break;
-            case 'g': parse_geometry_string(optarg); break;
+            case 'g': (void)parse_geometry_string(optarg, geom_v); break;
             case 'p': permanent = true; break;
             case 'b': topbar = false; break;
             case 'd': dock = true; break;
             case 'f': parse_font_list(optarg); break;
+            case 'u': bu = strtoul(optarg, NULL, 10); break;
             case 'B': dbgc = bgc = parse_color(optarg, NULL, scr->black_pixel); break;
             case 'F': dfgc = fgc = parse_color(optarg, NULL, scr->white_pixel); break;
         }
     }
 
+    /* Copy the geometry values in place */
+    bw = geom_v[0];
+    bh = geom_v[1];
+    bx = geom_v[2];
+
     /* Sanitize the arguments */
+    if (bx >= scr->width_in_pixels || bx + bw >= scr->width_in_pixels) {
+        bx = 0;
+        bw = -1;
+    }
+    if (bu >= bh)
+        bu = 1;
     if (ba > 1.0f)
         ba = 1.0f;
     if (ba < 0.0f)
@@ -870,5 +907,5 @@ main (int argc, char **argv)
         xcb_flush(c);
     }
 
-    return 0;
+    return EXIT_SUCCESS;
 }

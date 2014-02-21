@@ -4,7 +4,7 @@ bar - bar ain't recursive
 
 =head1 SYNOPSIS
 
-I<bar> [-h | -g I<width>B<x>I<height> | -b | -d | -f I<font> | -a I<alpha>| -p | -B I<color> | -F I<color>]
+I<bar> [-h | -g I<width>B<x>I<height>B<+>I<x> | -b | -d | -f I<font> | -a I<alpha>| -p | -u I<pixel> | -B I<color> | -F I<color>]
 
 =head1 DESCRIPTION
 
@@ -18,9 +18,9 @@ B<bar> is a lightweight bar entirely based on XCB. Provides full UTF-8 support, 
 
 Display the help and exit.
 
-=item B<-g> I<width>B<x>I<height>
+=item B<-g> I<width>B<x>I<height>B<+>I<x>
 
-Set the window geometry. Both the parameters can be omitted, bar defaults the former to the whole width and the height to the font height + 1 pixel.
+Set the window geometry. If a parameter is omitted it's filled with the default value.
 
 =item B<-b>
 
@@ -41,6 +41,10 @@ Set the bar alpha in range 0.0 to 1.0. This requires a compositor manager such a
 =item B<-p>
 
 Make bar permanent, don't exit after the standard input is closed.
+
+=item B<-u> I<pixel>
+
+Sets the underline width in pixels. The default is 1.
 
 =item B<-B> I<color>
 
