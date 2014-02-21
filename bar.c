@@ -850,12 +850,13 @@ main (int argc, char **argv)
     bx = geom_v[2];
 
     /* Sanitize the arguments */
-    if (bx >= scr->width_in_pixels || bx + bw >= scr->width_in_pixels) {
-        bx = 0;
-        bw = -1;
+    if (bx >= scr->width_in_pixels || bx + bw > scr->width_in_pixels) {
+        fprintf(stderr, "The geometry specified doesn't fit the screen!\n");
+        return;
     }
+
     if (bu >= bh)
-        bu = 1;
+        bu %= bh;
     if (ba > 1.0f)
         ba = 1.0f;
     if (ba < 0.0f)
