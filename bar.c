@@ -16,7 +16,7 @@
 
 #define max(a,b) ((a) > (b) ? (a) : (b))
 #define min(a,b) ((a) < (b) ? (a) : (b))
-#define indexof(c,s) (strchr(s,c)-s)
+#define indexof(c,s) (strchr((s),(c))-(s))
 
 typedef struct font_t {
     xcb_font_t ptr;
@@ -31,6 +31,7 @@ typedef struct monitor_t {
     uint32_t x;
     uint32_t width;
     xcb_window_t window;
+    xcb_pixmap_t pixmap;
     struct monitor_t *prev, *next;
 } monitor_t;
 
@@ -45,10 +46,17 @@ enum {
     ALIGN_R
 };
 
+enum {
+    GC_DRAW = 0,
+    GC_CLEAR,
+    GC_ATTR,
+    GC_MAX
+};
+
 static xcb_connection_t *c;
 static xcb_screen_t *scr;
 static xcb_drawable_t canvas;
-static xcb_gcontext_t gc[3];
+static xcb_gcontext_t gc[GC_MAX];
 static monitor_t *monhead, *montail;
 static font_t *main_font, *alt_font;
 static uint32_t attrs = 0;
@@ -64,15 +72,15 @@ static uint32_t dfgc, dbgc;
 void
 update_gc (void)
 {
-    xcb_change_gc(c, gc[0], XCB_GC_BACKGROUND | XCB_GC_FOREGROUND, (const uint32_t []){ fgc, bgc });
-    xcb_change_gc(c, gc[1], XCB_GC_FOREGROUND, (const uint32_t []){ bgc });
-    xcb_change_gc(c, gc[2], XCB_GC_FOREGROUND, (const uint32_t []){ ugc });
+    xcb_change_gc(c, gc[GC_DRAW], XCB_GC_BACKGROUND | XCB_GC_FOREGROUND, (const uint32_t []){ fgc, bgc });
+    xcb_change_gc(c, gc[GC_CLEAR], XCB_GC_FOREGROUND, (const uint32_t []){ bgc });
+    xcb_change_gc(c, gc[GC_ATTR], XCB_GC_FOREGROUND, (const uint32_t []){ ugc });
 }
 
 void
-fill_rect (xcb_gcontext_t gc, int x, int y, int width, int height)
+fill_rect (xcb_drawable_t d, xcb_gcontext_t gc, int x, int y, int width, int height)
 {
-    xcb_poly_fill_rectangle(c, canvas, gc, 1, (const xcb_rectangle_t []){ { x, y, width, height } });
+    xcb_poly_fill_rectangle(c, d, gc, 1, (const xcb_rectangle_t []){ { x, y, width, height } });
 }
 
 int
@@ -86,31 +94,31 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
 
     switch (align) {
         case ALIGN_C:
-            xcb_copy_area(c, canvas, canvas, gc[0], mon->width / 2 - x / 2 + mon->x, 0,
-                    mon->width / 2 - (x + ch_width) / 2 + mon->x, 0, x, bh);
+            xcb_copy_area(c, mon->pixmap, mon->pixmap, gc[GC_DRAW], mon->width / 2 - x / 2, 0,
+                    mon->width / 2 - (x + ch_width) / 2, 0, x, bh);
             x = mon->width / 2 - (x + ch_width) / 2 + x;
             break;
         case ALIGN_R:
-            xcb_copy_area(c, canvas, canvas, gc[0], mon->width - x + mon->x, 0,
-                    mon->width - x - ch_width + mon->x, 0, x, bh);
+            xcb_copy_area(c, mon->pixmap, mon->pixmap, gc[GC_DRAW], mon->width - x, 0,
+                    mon->width - x - ch_width, 0, x, bh);
             x = mon->width - ch_width;
             break;
     }
 
     /* Draw the background first */
-    fill_rect(gc[1], x + mon->x, 0, ch_width, bh);
+    fill_rect(mon->pixmap, gc[GC_CLEAR], x, 0, ch_width, bh);
 
     /* xcb accepts string in UCS-2 BE, so swap */
     ch = (ch >> 8) | (ch << 8);
 
     /* String baseline coordinates */
-    xcb_image_text_16(c, 1, canvas, gc[0], x + mon->x, bh / 2 + cur_font->height / 2 - cur_font->descent, (xcb_char2b_t *)&ch);
+    xcb_image_text_16(c, 1, mon->pixmap, gc[GC_DRAW], x, bh / 2 + cur_font->height / 2 - cur_font->descent, (xcb_char2b_t *)&ch);
 
     /* We can render both at the same time */
     if (attrs & ATTR_OVERL)
-        fill_rect(gc[2], x + mon->x, 0, ch_width, bu);
+        fill_rect(mon->pixmap, gc[GC_ATTR], x, 0, ch_width, bu);
     if (attrs & ATTR_UNDERL)
-        fill_rect(gc[2], x + mon->x, bh-bu, ch_width, bu);
+        fill_rect(mon->pixmap, gc[GC_ATTR], x, bh - bu, ch_width, bu);
 
     return ch_width;
 }
@@ -187,7 +195,7 @@ parse (char *text)
     cur_font = main_font;
     cur_mon = monhead;
 
-    fill_rect(gc[1], 0, 0, bw, bh);
+    fill_rect(cur_mon->pixmap, gc[GC_CLEAR], 0, 0, bw, bh);
 
     for (;;) {
         if (*p == '\0' || *p == '\n')
@@ -220,19 +228,24 @@ parse (char *text)
 
                     case 'S':
                               if (*p == '+' && cur_mon->next)
-                              { cur_mon = cur_mon->next; pos_x = 0; }
-                              if (*p == '-' && cur_mon->prev)
-                              { cur_mon = cur_mon->prev; pos_x = 0; }
-                              if (*p == 'f')
-                              { cur_mon = monhead; pos_x = 0; }
-                              if (*p == 'l')
-                              { cur_mon = montail ? montail : monhead; pos_x = 0; }
-                              if (isdigit(*p))
+                              { cur_mon = cur_mon->next; }
+                              else if (*p == '-' && cur_mon->prev)
+                              { cur_mon = cur_mon->prev; }
+                              else if (*p == 'f')
+                              { cur_mon = monhead; }
+                              else if (*p == 'l')
+                              { cur_mon = montail ? montail : monhead; }
+                              else if (isdigit(*p))
                               { cur_mon = monhead;
                                 for (int i = 0; i != *p-'0' && cur_mon->next; i++)
                                     cur_mon = cur_mon->next;
                               }
-                              p++;
+                              else
+                              { p++; continue; }
+
+                              p+;
+                              pos_x = 0;
+                              fill_rect(cur_mon->pixmap, gc[GC_CLEAR], 0, 0, cur_mon->width, bh);
                               break;
 
                     /* In case of error keep parsing after the closing } */
@@ -266,7 +279,7 @@ parse (char *text)
             /* If the character is outside the main font charset use the alternate font */
             cur_font = (ucs < main_font->char_min || ucs > main_font->char_max) ? alt_font : main_font;
 
-            xcb_change_gc(c, gc[0] , XCB_GC_FONT, (const uint32_t []){ cur_font->ptr });
+            xcb_change_gc(c, gc[GC_DRAW] , XCB_GC_FONT, (const uint32_t []){ cur_font->ptr });
 
             pos_x += draw_char(cur_mon, cur_font, pos_x, align, ucs);
         }
@@ -395,11 +408,14 @@ monitor_new (int x, int y, int width, int height)
     xcb_create_window(c, XCB_COPY_FROM_PARENT, ret->window, scr->root,
             x, win_y, width, bh, 0,
             XCB_WINDOW_CLASS_INPUT_OUTPUT, scr->root_visual,
-            XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK,
-            (const uint32_t []){ bgc, XCB_EVENT_MASK_EXPOSURE });
+            XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK,
+            (const uint32_t []){ bgc, dock, XCB_EVENT_MASK_EXPOSURE });
 
-    xcb_change_window_attributes(c, ret->window, XCB_CW_OVERRIDE_REDIRECT,
-            (const uint32_t []){ dock });
+    ret->pixmap = xcb_generate_id(c);
+    xcb_create_pixmap(c, scr->root_depth, ret->pixmap, scr->root, width, bh);
+
+    /* Clear the bar */
+    fill_rect(ret->pixmap, gc[GC_CLEAR], 0, 0, width, bh);
 
     return ret;
 }
@@ -605,8 +621,8 @@ void
 init (void)
 {
     /* If I fits I sits */
-    if (bw < 0 || bw > scr->width_in_pixels)
-        bw = scr->width_in_pixels;
+    if (bw < 0)
+        bw = scr->width_in_pixels - bx;
 
     /* Load the fonts */
     main_font = font_load(mfont ? mfont : "fixed");
@@ -622,7 +638,19 @@ init (void)
 
     /* Adjust the height */
     if (bh < 0 || bh > scr->height_in_pixels)
-        bh = main_font->height + 1;
+        bh = main_font->height + bu + 2;
+
+    ugc = fgc;
+
+    /* Create the gc for drawing */
+    gc[GC_DRAW] = xcb_generate_id(c);
+    xcb_create_gc(c, gc[GC_DRAW], scr->root, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND, (const uint32_t []){ fgc, bgc });
+
+    gc[GC_CLEAR] = xcb_generate_id(c);
+    xcb_create_gc(c, gc[GC_CLEAR], scr->root, XCB_GC_FOREGROUND, (const uint32_t []){ bgc });
+
+    gc[GC_ATTR] = xcb_generate_id(c);
+    xcb_create_gc(c, gc[GC_ATTR], scr->root, XCB_GC_FOREGROUND, (const uint32_t []){ ugc });
 
     /* Generate a list of screens */
     const xcb_query_extension_reply_t *qe_reply;
@@ -660,23 +688,6 @@ init (void)
     /* For WM that support EWMH atoms */
     set_ewmh_atoms();
 
-    /* Create a temporary canvas */
-    canvas = xcb_generate_id(c);
-    xcb_create_pixmap(c, scr->root_depth, canvas, scr->root, bw, bh);
-
-    /* Default to the classic B/W combo */
-    ugc = fgc;
-
-    /* Create the gc for drawing */
-    gc[0] = xcb_generate_id(c);
-    xcb_create_gc(c, gc[0], scr->root, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND, (const uint32_t []){ fgc, bgc });
-
-    gc[1] = xcb_generate_id(c);
-    xcb_create_gc(c, gc[1], scr->root, XCB_GC_FOREGROUND, (const uint32_t []){ bgc });
-
-    gc[2] = xcb_generate_id(c);
-    xcb_create_gc(c, gc[2], scr->root, XCB_GC_FOREGROUND, (const uint32_t []){ bgc });
-
     /* Make the bar visible */
     for (monitor_t *mon = monhead; mon; mon = mon->next)
         xcb_map_window(c, mon->window);
@@ -688,29 +699,29 @@ void
 cleanup (void)
 {
     if (main_font) {
-        xcb_close_font (c, main_font->ptr);
+        xcb_close_font(c, main_font->ptr);
         free(main_font);
     }
 
     if (alt_font) {
-        xcb_close_font (c, alt_font->ptr);
+        xcb_close_font(c, alt_font->ptr);
         free(alt_font);
     }
 
     while (monhead) {
         monitor_t *next = monhead->next;
+        xcb_destroy_window(c, monhead->window);
+        xcb_free_pixmap(c, monhead->pixmap);
         free(monhead);
         monhead = next;
     }
 
-    if (canvas)
-        xcb_free_pixmap(c, canvas);
-    if (gc[0])
-        xcb_free_gc(c, gc[0]);
-    if (gc[1])
-        xcb_free_gc(c, gc[1]);
-    if (gc[2])
-        xcb_free_gc(c, gc[2]);
+    if (gc[GC_DRAW])
+        xcb_free_gc(c, gc[GC_DRAW]);
+    if (gc[GC_CLEAR])
+        xcb_free_gc(c, gc[GC_CLEAR]);
+    if (gc[GC_ATTR])
+        xcb_free_gc(c, gc[GC_ATTR]);
     if (c)
         xcb_disconnect(c);
 }
@@ -855,8 +866,6 @@ main (int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    if (bu >= bh)
-        bu %= bh;
     if (ba > 1.0f)
         ba = 1.0f;
     if (ba < 0.0f)
@@ -866,8 +875,6 @@ main (int argc, char **argv)
     init();
     /* Get the fd to Xserver */
     pollin[1].fd = xcb_get_file_descriptor(c);
-    /* Clear the bar */
-    fill_rect(gc[1], 0, 0, bw, bh);
 
     for (;;) {
         bool redraw = false;
@@ -901,7 +908,7 @@ main (int argc, char **argv)
 
         if (redraw) { /* Copy our temporary pixmap onto the window */
             for (monitor_t *mon = monhead; mon; mon = mon->next) {
-                xcb_copy_area(c, canvas, mon->window, gc[0], mon->x, 0, 0, 0, mon->width, bh);
+                xcb_copy_area(c, mon->pixmap, mon->window, gc[GC_DRAW], 0, 0, 0, 0, mon->width, bh);
             }
         }
 
