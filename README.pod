@@ -4,7 +4,7 @@ bar - bar ain't recursive
 
 =head1 SYNOPSIS
 
-I<bar> [-h | -g I<width>B<x>I<height>B<+>I<x> | -b | -d | -f I<font> | -a I<alpha>| -p | -u I<pixel> | -B I<color> | -F I<color>]
+I<bar> [-h | -g I<width>B<x>I<height>B<+>I<x> | -b | -d | -f I<font> | -p | -u I<pixel> | -B I<color> | -F I<color>]
 
 =head1 DESCRIPTION
 
@@ -48,7 +48,7 @@ Sets the underline width in pixels. The default is 1.
 
 =item B<-B> I<color>
 
-Set the background color of the bar. I<color> might be either in hex format (#rrggbb) or in the symbolic name format (eg. white, brightred, darkgray).
+Set the background color of the bar. I<color> might be either in hex format (#aarrggbb) or in the symbolic name format (eg. white, brightred, darkgray). If no compositor such as compton or xcompmgr is running the alpha channel is silently ignored.
 
 =item B<-F> I<color>
 
