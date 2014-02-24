@@ -17,6 +17,7 @@
 #define max(a,b) ((a) > (b) ? (a) : (b))
 #define min(a,b) ((a) < (b) ? (a) : (b))
 #define indexof(c,s) (strchr((s),(c))-(s))
+#define MONITORS_MAX 32
 
 typedef struct font_t {
     xcb_font_t ptr;
@@ -68,6 +69,38 @@ static int bu = 1; /* Underline height */
 static char *mfont, *afont;
 static uint32_t fgc, bgc, ugc;
 static uint32_t dfgc, dbgc;
+static uint32_t mons = 0;
+static int nmons = 0;
+static int monlist[MONITORS_MAX];
+
+void
+set_monitor (int n)
+{
+    if (n >= MONITORS_MAX || n < 0) {
+        fprintf(stderr, "Invalic monitor specified: %d\n", n);
+        return;
+    }
+    mons |= 1 << n;
+    monlist[nmons++] = n;
+}
+
+int
+get_monitor_pos (int n)
+{
+    if (n < MONITORS_MAX && (mons & (1 << n)))
+        for (int i = 0; i < nmons; i++)
+            if (monlist[i] == n)
+                return i;
+    return -1;
+}
+
+int
+get_monitor_at_pos (int n)
+{
+    if (n < nmons)
+        return monlist[n];
+    return -1;
+}
 
 void
 update_gc (void)
@@ -195,7 +228,8 @@ parse (char *text)
     cur_font = main_font;
     cur_mon = monhead;
 
-    fill_rect(cur_mon->pixmap, gc[GC_CLEAR], 0, 0, bw, bh);
+    for (monitor_t *m = monhead; m; m = m->next)
+        fill_rect(m->pixmap, gc[GC_CLEAR], 0, 0, bw, bh);
 
     for (;;) {
         if (*p == '\0' || *p == '\n')
@@ -245,7 +279,6 @@ parse (char *text)
 
                               p++;
                               pos_x = 0;
-                              fill_rect(cur_mon->pixmap, gc[GC_CLEAR], 0, 0, cur_mon->width, bh);
                               break;
 
                     /* In case of error keep parsing after the closing } */
@@ -453,14 +486,40 @@ rect_sort_cb (const void *p1, const void *p2)
 void
 monitor_create_chain (xcb_rectangle_t *rects, const int num)
 {
-    int width = bw;
+    int i, cnt;
+    int width = 0;
     int left = bx;
 
     /* Sort before use */
     qsort(rects, num, sizeof(xcb_rectangle_t), rect_sort_cb);
 
+    if (nmons) {
+        xcb_rectangle_t r[num];
+        /* Get combined width of specified monitors and set aside specified monitors */
+        for (i = cnt = 0; i < nmons; i++) {
+            if (monlist[i] >= num) {
+                fprintf(stderr, "Specified monitor %d not found\n", monlist[i]);
+                continue;
+            }
+            width += rects[monlist[i]].width;
+            memcpy(&r[cnt++], &rects[monlist[i]], sizeof(xcb_rectangle_t));
+        }
+        memcpy(rects, r, cnt * sizeof(xcb_rectangle_t));
+    }
+    else {
+        /* Else default to X screen width */
+        width = scr->width_in_pixels;
+        cnt = num;
+    }
+
+    /* If I fits I sits */
+    if (bw < 0)
+        bw = width - bx;
+    else
+        width = bw - bx;
+
     /* Left is a positive number or zero therefore monitors with zero width are excluded */
-    for (int i = 0; i < num; i++) {
+    for (int i = 0; i < cnt; i++) {
         if (rects[i].width > left) {
             monitor_t *mon = monitor_new(
                     rects[i].x + left,
@@ -490,7 +549,7 @@ get_randr_monitors (void)
     xcb_generic_error_t *err;
     xcb_randr_get_screen_resources_current_reply_t *rres_reply;
     xcb_randr_output_t *outputs;
-    int num, valid = 0;
+    int i, j, num, valid = 0;
 
     rres_reply = xcb_randr_get_screen_resources_current_reply(c,
             xcb_randr_get_screen_resources_current(c, scr->root), NULL);
@@ -513,7 +572,7 @@ get_randr_monitors (void)
     xcb_rectangle_t rects[num];
 
     /* Get all outputs */
-    for (int i = 0; i < num; i++) {
+    for (i = 0; i < num; i++) {
         xcb_randr_get_output_info_reply_t *oi_reply;
         xcb_randr_get_crtc_info_reply_t *ci_reply;
 
@@ -549,11 +608,11 @@ get_randr_monitors (void)
     free(rres_reply);
 
     /* Check for clones and inactive outputs */
-    for (int i = 0; i < num; i++) {
+    for (i = 0; i < num; i++) {
         if (rects[i].width == 0)
             continue;
 
-        for (int j = 0; j < num; j++) {
+        for (j = 0; j < num; j++) {
             /* Does I countain J ? */
 
             if (i != j && rects[j].width) {
@@ -571,7 +630,20 @@ get_randr_monitors (void)
         return;
     }
 
+    /* Use allocated array to pass to monitor_create_chain, the dynamic will out of scope */
+    xcb_rectangle_t *r = malloc(valid * sizeof(xcb_rectangle_t));
+    if (!r) {
+        fprintf(stderr, "Malloc failed!\n");
+        exit(EXIT_FAILURE);
+    }
+
+    /* Copy only used monitors */
+    for (i = j = 0; i < num && j < valid; i++)
+        if (rects[i].width)
+            memcpy(&r[j++], &rects[i], sizeof(xcb_rectangle_t));
+
     monitor_create_chain(rects, num);
+    free(r);
 }
 
 void
@@ -587,7 +659,11 @@ get_xinerama_monitors (void)
     iter = xcb_xinerama_query_screens_screen_info_iterator(xqs_reply);
     screens = iter.rem;
 
-    xcb_rectangle_t rects[screens];
+    xcb_rectangle_t *rects = malloc(screens * sizeof(xcb_rectangle_t));
+    if (!rects) {
+        fprintf(stderr, "Malloc failed!\n");
+        exit(EXIT_FAILURE);
+    }
 
     /* Fetch all the screens first */
     for (int i = 0; iter.rem; i++) {
@@ -601,6 +677,7 @@ get_xinerama_monitors (void)
     free(xqs_reply);
 
     monitor_create_chain(rects, screens);
+    free(rects);
 }
 
 void
@@ -620,10 +697,6 @@ xconn (void)
 void
 init (void)
 {
-    /* If I fits I sits */
-    if (bw < 0)
-        bw = scr->width_in_pixels - bx;
-
     /* Load the fonts */
     main_font = font_load(mfont ? mfont : "fixed");
     if (!main_font)
@@ -678,9 +751,14 @@ init (void)
         }
     }
 
-    if (!monhead)
+    if (!monhead) {
+        /* If I fits I sits */
+        if (bw < 0)
+            bw = scr->width_in_pixels - bx;
+
         /* If no RandR outputs or Xinerama screens, fall back to using whole screen */
         monhead = monitor_new(0, 0, bw, scr->height_in_pixels);
+    }
 
     if (!monhead)
         exit(EXIT_FAILURE);
@@ -784,6 +862,38 @@ parse_geometry_string (char *str, int *tmp)
     return true;
 }
 
+bool
+parse_monitor_string (char *str)
+{
+    char *p = str;
+    int i = 0, j;
+
+    if (!str || !*str)
+        return false;
+
+    while (*p) {
+        /* Skip separator */
+        if (*p == ':' || *p == ',')
+            if (!*++p)
+                break;
+        /* A digit must follow */
+        if (!isdigit(*p)) {
+            fprintf(stderr, "Invalid monitor specified\n");
+            return false;
+        }
+        /* Try to parse the number */
+        errno = 0;
+        j = strtoul(p, &p, 10);
+        if (errno || j >= MONITORS_MAX) {
+            fprintf(stderr, "Monitor value out of range\n");
+            return false;
+        }
+        set_monitor(j);
+    }
+
+    return true;
+}
+
 void
 parse_font_list (char *str)
 {
@@ -828,12 +938,13 @@ main (int argc, char **argv)
     dfgc = fgc = scr->white_pixel;
 
     char ch;
-    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:")) != -1) {
+    while ((ch = getopt(argc, argv, "hg:m:bdf:a:pu:B:F:")) != -1) {
         switch (ch) {
             case 'h':
-                printf ("usage: %s [-h | -g | -b | -d | -f | -a | -p | -u | -B | -F]\n"
+                printf ("usage: %s [-h | -g | -m | -b | -d | -f | -a | -p | -u | -B | -F]\n"
                         "\t-h Show this help\n"
                         "\t-g Set the bar geometry {width}x{height})\n"
+                        "\t-m Set monitors to use and in what order {0:2:1...}\n"
                         "\t-b Put bar at the bottom of the screen\n"
                         "\t-d Force docking (use this if your WM isn't EWMH compliant)\n"
                         "\t-f Bar font list, comma separated\n"
@@ -845,6 +956,7 @@ main (int argc, char **argv)
                 exit (EXIT_SUCCESS);
             case 'a': ba = strtof(optarg, NULL); break;
             case 'g': (void)parse_geometry_string(optarg, geom_v); break;
+            case 'm': (void)parse_monitor_string(optarg); break;
             case 'p': permanent = true; break;
             case 'b': topbar = false; break;
             case 'd': dock = true; break;
