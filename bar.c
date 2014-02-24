@@ -35,6 +35,11 @@ typedef struct monitor_t {
     struct monitor_t *prev, *next;
 } monitor_t;
 
+typedef struct area_t {
+    int start, end;
+    char *cmd;
+} area_t;
+
 enum {
     ATTR_OVERL = (1<<0),
     ATTR_UNDERL = (1<<1),
@@ -187,6 +192,64 @@ set_attribute (const char modifier, const char attribute)
     }
 }
 
+area_t area_stack[10];
+int area_stack_i = 0;
+
+area_t *
+area_get (int x)
+{
+    for (int i = 0; i < area_stack_i; i++)
+        if (x >= area_stack[i].start && x <= area_stack[i].end)
+            return &area_stack[i];
+    return NULL;
+}
+
+bool
+area_add (char *str, char *optend, char **end, monitor_t *mon, const int x, const int align)
+{
+    char *p = str;
+    area_t *a = &area_stack[area_stack_i];
+
+    if (*p != ':' && area_stack_i < 10) {
+        switch (align) {
+            case ALIGN_L: a->end = x; break;
+            case ALIGN_R: a->start = mon->width - x; break;
+            case ALIGN_C: 
+                          a->start = mon->width / 2 - (x / 2);
+                          a->end   = mon->width / 2 + (x / 2);
+                          break;
+        }
+
+        *end = p;
+
+        if (a->start < a->end) {
+            printf("(%s) (%i to %i)\n", a->cmd, a->start, a->end);
+            area_stack_i++;
+            return true;
+        }
+        return false;
+    }
+
+    char *trail = strchr(++p, ':');
+
+    if (!trail || trail > optend) {
+        *end = p;
+        return false;
+    }
+
+    *trail = '\0';
+
+    a->cmd = p;
+
+    switch (align) {
+        case ALIGN_L: a->start = x; break;
+        case ALIGN_R: a->end = scr->width_in_pixels - x; break;
+    }
+
+    *end = trail + 1;
+    return true;
+}
+
 void
 parse (char *text)
 {
@@ -201,6 +264,8 @@ parse (char *text)
     align = ALIGN_L;
     cur_font = main_font;
     cur_mon = monhead;
+
+    area_stack_i = 0;
 
     fill_rect(cur_mon->pixmap, gc[GC_CLEAR], 0, 0, bw, bh);
 
@@ -228,6 +293,10 @@ parse (char *text)
                     case 'l': pos_x = 0; align = ALIGN_L; break;
                     case 'c': pos_x = 0; align = ALIGN_C; break;
                     case 'r': pos_x = 0; align = ALIGN_R; break;
+
+                    case 'A': 
+                              area_add(p, end, &p, cur_mon, pos_x, align);
+                              break;
 
                     case 'B': bgc = parse_color(p, &p, dbgc); update_gc(); break;
                     case 'F': fgc = parse_color(p, &p, dfgc); update_gc(); break;
@@ -414,7 +483,7 @@ monitor_new (int x, int y, int width, int height)
             x, win_y, width, bh, 0,
             XCB_WINDOW_CLASS_INPUT_OUTPUT, visual,
             XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP,
-            (const uint32_t []){ bgc, bgc, dock, XCB_EVENT_MASK_EXPOSURE, colormap });
+            (const uint32_t []){ bgc, bgc, dock, XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_BUTTON_PRESS, colormap });
 
     ret->pixmap = xcb_generate_id(c);
     xcb_create_pixmap(c, depth, ret->pixmap, ret->window, width, bh);
@@ -842,6 +911,7 @@ main (int argc, char **argv)
     };
     xcb_generic_event_t *ev;
     xcb_expose_event_t *expose_ev;
+    xcb_button_press_event_t *press_ev;
     char input[2048] = {0, };
     bool permanent = false;
     int geom_v[4] = { -1, -1, 0, 0 };
@@ -902,6 +972,8 @@ main (int argc, char **argv)
     /* Get the fd to Xserver */
     pollin[1].fd = xcb_get_file_descriptor(c);
 
+    area_t *a;
+
     for (;;) {
         bool redraw = false;
 
@@ -924,6 +996,13 @@ main (int argc, char **argv)
                     switch (ev->response_type & 0x7F) {
                         case XCB_EXPOSE:
                             if (expose_ev->count == 0) redraw = true;
+                        case XCB_BUTTON_PRESS:
+                            press_ev = (xcb_button_press_event_t *)ev;
+
+                            if (press_ev->detail == XCB_BUTTON_INDEX_1) {
+                                a = area_get(press_ev->event_x);
+                                if (a) system(a->cmd);
+                            }
                         break;
                     }
 
