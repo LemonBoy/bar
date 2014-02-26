@@ -246,6 +246,9 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
         const int size = x - a->begin;
 
         switch (align) {
+            case ALIGN_L:
+                a->end = x;
+                break;
             case ALIGN_C:
                 a->begin = mon->width / 2 - size / 2 + a->begin / 2;
                 a->end = a->begin + size;
