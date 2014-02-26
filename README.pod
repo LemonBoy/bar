@@ -38,10 +38,6 @@ Force docking without asking the window manager. This is needed if the window ma
 
 Comma separated list of fonts, bar supports a maximum of two fonts.
 
-=item B<-a> I<alpha>
-
-Set the bar alpha in range 0.0 to 1.0. This requires a compositor manager such as Compton.
-
 =item B<-p>
 
 Make bar permanent, don't exit after the standard input is closed.
