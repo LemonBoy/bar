@@ -90,7 +90,7 @@ Set the text underline color. The parameter I<color> can be I<-> or a color in o
 
 Create a clickable area starting from the current position, when the area is clicked I<command> is executed. The area is closed when a B<A> token, not followed by : is encountered.
 
-Eg. I<%{A:reboot} Click here to reboot %{A}>
+Eg. I<%{A:reboot:} Click here to reboot %{A}>
 
 =item B<S>I<dir>
 
