@@ -278,7 +278,7 @@ parse (char *text)
                               { cur_mon = montail ? montail : monhead; }
                               else if (isdigit(*p))
                               { cur_mon = monhead;
-                                for (int i = 1; i != *p-'0' && cur_mon->next; i++)
+                                for (int i = 0; i != *p-'0' && cur_mon->next; i++)
                                     cur_mon = cur_mon->next;
                               }
                               else
