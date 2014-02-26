@@ -36,9 +36,17 @@ typedef struct monitor_t {
 } monitor_t;
 
 typedef struct area_t {
-    int start, end;
+    int begin, end, align;
+    xcb_window_t window;
     char *cmd;
 } area_t;
+
+#define N 10
+
+typedef struct area_stack_t {
+    int pos;
+    area_t slot[N];
+} area_stack_t;
 
 enum {
     ATTR_OVERL = (1<<0),
@@ -74,6 +82,7 @@ static int bu = 1; /* Underline height */
 static char *mfont, *afont;
 static uint32_t fgc, bgc, ugc;
 static uint32_t dfgc, dbgc;
+static area_stack_t astack;
 
 void
 update_gc (void)
@@ -102,7 +111,7 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
         case ALIGN_C:
             xcb_copy_area(c, mon->pixmap, mon->pixmap, gc[GC_DRAW], mon->width / 2 - x / 2, 0,
                     mon->width / 2 - (x + ch_width) / 2, 0, x, bh);
-            x = mon->width / 2 - (x + ch_width) / 2 + x;
+            x = mon->width / 2 - ch_width / 2 + x / 2;
             break;
         case ALIGN_R:
             xcb_copy_area(c, mon->pixmap, mon->pixmap, gc[GC_DRAW], mon->width - x, 0,
@@ -192,61 +201,88 @@ set_attribute (const char modifier, const char attribute)
     }
 }
 
-area_t area_stack[10];
-int area_stack_i = 0;
 
 area_t *
-area_get (int x)
+area_get (xcb_window_t win, const int x)
 {
-    for (int i = 0; i < area_stack_i; i++)
-        if (x >= area_stack[i].start && x <= area_stack[i].end)
-            return &area_stack[i];
+    for (int i = 0; i < astack.pos; i++)
+        if (astack.slot[i].window == win && x > astack.slot[i].begin && x < astack.slot[i].end)
+            return &astack.slot[i];
     return NULL;
 }
 
+void
+area_shift (xcb_window_t win, const int align, int delta)
+{
+    if (align == ALIGN_L)
+        return;
+    if (align == ALIGN_C)
+        delta /= 2;
+
+    for (int i = 0; i < astack.pos; i++) {
+        if (astack.slot[i].window == win && astack.slot[i].align == align) {
+            astack.slot[i].begin -= delta;
+            astack.slot[i].end -= delta;
+        }
+    }
+}
+
 bool
-area_add (char *str, char *optend, char **end, monitor_t *mon, const int x, const int align)
+area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x, const int align)
 {
     char *p = str;
-    area_t *a = &area_stack[area_stack_i];
+    area_t *a = &astack.slot[astack.pos];
 
-    if (*p != ':' && area_stack_i < 10) {
-        switch (align) {
-            case ALIGN_L: a->end = x; break;
-            case ALIGN_R: a->start = mon->width - x; break;
-            case ALIGN_C: 
-                          a->start = mon->width / 2 - (x / 2);
-                          a->end   = mon->width / 2 + (x / 2);
-                          break;
-        }
+    if (astack.pos == N) {
+        fprintf(stderr, "astack overflow!\n");
+        return false;
+    }
 
+    /* A wild close area tag appeared! */
+    if (*p != ':') {
         *end = p;
 
-        if (a->start < a->end) {
-            printf("(%s) (%i to %i)\n", a->cmd, a->start, a->end);
-            area_stack_i++;
-            return true;
+        /* Basic safety checks */
+        if (!a->cmd || a->align != align || a->window != mon->window)
+            return false;
+
+        const int size = x - a->begin;
+
+        switch (align) {
+            case ALIGN_C:
+                a->begin = mon->width / 2 - size / 2 + a->begin / 2;
+                a->end = a->begin + size;
+                break;
+            case ALIGN_R:
+                /* The newest is the rightmost one */
+                a->begin = mon->width - size;
+                a->end = mon->width;
+                break;
         }
-        return false;
+
+        astack.pos++;
+
+        return true;
     }
 
     char *trail = strchr(++p, ':');
 
-    if (!trail || trail > optend) {
+    /* Find the trailing : and make sure it's whitin the formatting block, also reject empty commands */
+    if (!trail || p == trail || trail > optend) {
         *end = p;
         return false;
     }
 
     *trail = '\0';
 
+    /* This is a pointer to the string buffer allocated in the main */
     a->cmd = p;
-
-    switch (align) {
-        case ALIGN_L: a->start = x; break;
-        case ALIGN_R: a->end = scr->width_in_pixels - x; break;
-    }
+    a->align = align;
+    a->begin = x;
+    a->window = mon->window;
 
     *end = trail + 1;
+
     return true;
 }
 
@@ -265,7 +301,7 @@ parse (char *text)
     cur_font = main_font;
     cur_mon = monhead;
 
-    area_stack_i = 0;
+    memset(&astack, 0, sizeof(area_stack_t));
 
     fill_rect(cur_mon->pixmap, gc[GC_CLEAR], 0, 0, bw, bh);
 
@@ -357,7 +393,10 @@ parse (char *text)
 
             xcb_change_gc(c, gc[GC_DRAW] , XCB_GC_FONT, (const uint32_t []){ cur_font->ptr });
 
-            pos_x += draw_char(cur_mon, cur_font, pos_x, align, ucs);
+            int w = draw_char(cur_mon, cur_font, pos_x, align, ucs);
+
+            pos_x += w;
+            area_shift(cur_mon->window, align, w);
         }
     }
 }
@@ -465,7 +504,7 @@ monitor_new (int x, int y, int width, int height)
 {
     monitor_t *ret;
 
-    ret = malloc(sizeof(monitor_t));
+    ret = calloc(1, sizeof(monitor_t));
     if (!ret) {
         fprintf(stderr, "Failed to allocate new monitor\n");
         exit(EXIT_FAILURE);
@@ -1000,7 +1039,7 @@ main (int argc, char **argv)
                             press_ev = (xcb_button_press_event_t *)ev;
 
                             if (press_ev->detail == XCB_BUTTON_INDEX_1) {
-                                a = area_get(press_ev->event_x);
+                                a = area_get(press_ev->event, press_ev->event_x);
                                 if (a) system(a->cmd);
                             }
                         break;

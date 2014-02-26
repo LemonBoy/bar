@@ -34,10 +34,6 @@ Force docking without asking the window manager. This is needed if the window ma
 
 Comma separated list of fonts, bar supports a maximum of two fonts.
 
-=item B<-a> I<alpha>
-
-Set the bar alpha in range 0.0 to 1.0. This requires a compositor manager such as Compton.
-
 =item B<-p>
 
 Make bar permanent, don't exit after the standard input is closed.
@@ -89,6 +85,12 @@ Set the text foreground color. The parameter I<color> can be I<-> or a color in 
 =item B<U>I<color>
 
 Set the text underline color. The parameter I<color> can be I<-> or a color in one of the formats mentioned before. The special value I<-> resets the color to the default one.
+
+=item B<A>:I<command>:
+
+Create a clickable area starting from the current position, when the area is clicked I<command> is executed. The area is closed when a B<A> token, not followed by : is encountered.
+
+Eg. I<%{A:reboot} Click here to reboot %{A}>
 
 =item B<S>I<dir>
 
@@ -155,3 +157,5 @@ L<git repository|https://github.com/LemonBoy/bar>
 Xinerama support was kindly contributed by Stebalien
 
 RandR support was kindly contributed by jvvv 
+
+Clickable areas support was heavily based off u-ra contribution
