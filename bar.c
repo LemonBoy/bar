@@ -20,16 +20,14 @@
 
 typedef struct font_t {
     xcb_font_t ptr;
-    uint32_t descent;
-    uint32_t height;
+    int descent, height;
     uint16_t char_max;
     uint16_t char_min;
     xcb_charinfo_t *width_lut;
 } font_t;
 
 typedef struct monitor_t {
-    uint32_t x;
-    uint32_t width;
+    int x, width;
     xcb_window_t window;
     xcb_pixmap_t pixmap;
     struct monitor_t *prev, *next;
@@ -68,7 +66,6 @@ enum {
 
 static xcb_connection_t *c;
 static xcb_screen_t *scr;
-static xcb_drawable_t canvas;
 static xcb_gcontext_t gc[GC_MAX];
 static xcb_visualid_t visual;
 static xcb_colormap_t colormap;
@@ -298,7 +295,6 @@ parse (char *text)
 
     pos_x = 0;
     align = ALIGN_L;
-    cur_font = main_font;
     cur_mon = monhead;
 
     memset(&astack, 0, sizeof(area_stack_t));
@@ -597,7 +593,6 @@ monitor_create_chain (xcb_rectangle_t *rects, const int num)
 void
 get_randr_monitors (void)
 {
-    xcb_generic_error_t *err;
     xcb_randr_get_screen_resources_current_reply_t *rres_reply;
     xcb_randr_output_t *outputs;
     int num, valid = 0;
@@ -689,7 +684,7 @@ get_xinerama_monitors (void)
 {
     xcb_xinerama_query_screens_reply_t *xqs_reply;
     xcb_xinerama_screen_info_iterator_t iter;
-    int screens, width = bw;
+    int screens;
 
     xqs_reply = xcb_xinerama_query_screens_reply(c,
             xcb_xinerama_query_screens_unchecked(c), NULL);
@@ -1011,8 +1006,6 @@ main (int argc, char **argv)
     /* Get the fd to Xserver */
     pollin[1].fd = xcb_get_file_descriptor(c);
 
-    area_t *a;
-
     for (;;) {
         bool redraw = false;
 
@@ -1034,15 +1027,17 @@ main (int argc, char **argv)
 
                     switch (ev->response_type & 0x7F) {
                         case XCB_EXPOSE:
-                            if (expose_ev->count == 0) redraw = true;
+                            if (expose_ev->count == 0) 
+                                redraw = true;
+                            break;
                         case XCB_BUTTON_PRESS:
                             press_ev = (xcb_button_press_event_t *)ev;
-
+                            /* Respond to left click */
                             if (press_ev->detail == XCB_BUTTON_INDEX_1) {
-                                a = area_get(press_ev->event, press_ev->event_x);
+                                area_t *a = area_get(press_ev->event, press_ev->event_x);
                                 if (a) system(a->cmd);
                             }
-                        break;
+                            break;
                     }
 
                     free(ev);
