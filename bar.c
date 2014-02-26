@@ -58,10 +58,11 @@ static xcb_connection_t *c;
 static xcb_screen_t *scr;
 static xcb_drawable_t canvas;
 static xcb_gcontext_t gc[GC_MAX];
+static xcb_visualid_t visual;
+static xcb_colormap_t colormap;
 static monitor_t *monhead, *montail;
 static font_t *main_font, *alt_font;
 static uint32_t attrs = 0;
-static float ba = 1.0f; /* bar alpha */
 static bool dock = false;
 static bool topbar = true;
 static int bw = -1, bh = -1, bx = 0;
@@ -173,16 +174,22 @@ parse_color (const char *str, char **end, const uint32_t def)
         return def;
     }
 
-    /* Hex rapresentation */
-    if (str[0] == '#')
-        return strtoul(str + 1, end, 16);
+    /* Hex representation */
+    if (str[0] == '#') {
+        errno = 0;
+        uint32_t tmp = strtoul(str + 1, end, 16);
+        /* Some error checking it's good */
+        if (errno)
+            return def;
+        return tmp;
+    }
 
     /* Actual color name, resolve it */
     str_len = 0;
     while (isalpha(str[str_len]))
         str_len++;
 
-    nc_reply = xcb_alloc_named_color_reply(c, xcb_alloc_named_color(c, scr->default_colormap, str_len, str), NULL);
+    nc_reply = xcb_alloc_named_color_reply(c, xcb_alloc_named_color(c, colormap, str_len, str), NULL);
 
     if (!nc_reply)
         fprintf(stderr, "Could not alloc color \"%.*s\"\n", str_len, str);
@@ -360,7 +367,6 @@ enum {
     NET_WM_STRUT_PARTIAL,
     NET_WM_STRUT,
     NET_WM_STATE,
-    NET_WM_WINDOW_OPACITY,
     NET_WM_STATE_STICKY,
     NET_WM_STATE_ABOVE,
 };
@@ -375,7 +381,6 @@ set_ewmh_atoms (void)
         "_NET_WM_STRUT_PARTIAL",
         "_NET_WM_STRUT",
         "_NET_WM_STATE",
-        "_NET_WM_WINDOW_OPACITY",
         /* Leave those at the end since are batch-set */
         "_NET_WM_STATE_STICKY",
         "_NET_WM_STATE_ABOVE",
@@ -411,7 +416,6 @@ set_ewmh_atoms (void)
             strut[11] = mon->x + mon->width;
         }
 
-        xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_WINDOW_OPACITY], XCB_ATOM_CARDINAL, 32, 1, (const uint32_t []){ (uint32_t)(ba * 0xffffffff) } );
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_WINDOW_TYPE], XCB_ATOM_ATOM, 32, 1, &atom_list[NET_WM_WINDOW_TYPE_DOCK]);
         xcb_change_property(c, XCB_PROP_MODE_APPEND,  mon->window, atom_list[NET_WM_STATE], XCB_ATOM_ATOM, 32, 2, &atom_list[NET_WM_STATE_STICKY]);
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_DESKTOP], XCB_ATOM_CARDINAL, 32, 1, (const uint32_t []){ -1 } );
@@ -438,17 +442,15 @@ monitor_new (int x, int y, int width, int height)
     int win_y = (topbar ? 0 : height - bh) + y;
     ret->window = xcb_generate_id(c);
 
-    xcb_create_window(c, XCB_COPY_FROM_PARENT, ret->window, scr->root,
+    int depth = (visual == scr->root_visual) ? XCB_COPY_FROM_PARENT : 32;
+    xcb_create_window(c, depth, ret->window, scr->root,
             x, win_y, width, bh, 0,
-            XCB_WINDOW_CLASS_INPUT_OUTPUT, scr->root_visual,
-            XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK,
-            (const uint32_t []){ bgc, dock, XCB_EVENT_MASK_EXPOSURE });
+            XCB_WINDOW_CLASS_INPUT_OUTPUT, visual,
+            XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP,
+            (const uint32_t []){ bgc, bgc, dock, XCB_EVENT_MASK_EXPOSURE, colormap });
 
     ret->pixmap = xcb_generate_id(c);
-    xcb_create_pixmap(c, scr->root_depth, ret->pixmap, scr->root, width, bh);
-
-    /* Clear the bar */
-    fill_rect(ret->pixmap, gc[GC_CLEAR], 0, 0, width, bh);
+    xcb_create_pixmap(c, depth, ret->pixmap, ret->window, width, bh);
 
     return ret;
 }
@@ -680,6 +682,27 @@ get_xinerama_monitors (void)
     free(rects);
 }
 
+xcb_visualid_t
+get_visual (void)
+{
+    xcb_depth_iterator_t iter;
+
+    iter = xcb_screen_allowed_depths_iterator(scr);
+
+    /* Try to find a RGBA visual */
+    while (iter.rem) {
+        xcb_visualtype_t *vis = xcb_depth_visuals(iter.data);
+
+        if (iter.data->depth == 32)
+            return vis->visual_id;
+
+        xcb_depth_next(&iter);
+    }
+
+    /* Fallback to the default one */
+    return scr->root_visual;
+}
+
 void
 xconn (void)
 {
@@ -692,6 +715,12 @@ xconn (void)
 
     /* Grab infos from the first screen */
     scr = xcb_setup_roots_iterator(xcb_get_setup(c)).data;
+
+    /* Try to get a RGBA visual and build the colormap for that */
+    visual = get_visual();
+
+    colormap = xcb_generate_id(c);
+    xcb_create_colormap(c, XCB_COLORMAP_ALLOC_NONE, colormap, scr->root, visual);
 }
 
 void
@@ -712,18 +741,6 @@ init (void)
     /* Adjust the height */
     if (bh < 0 || bh > scr->height_in_pixels)
         bh = main_font->height + bu + 2;
-
-    ugc = fgc;
-
-    /* Create the gc for drawing */
-    gc[GC_DRAW] = xcb_generate_id(c);
-    xcb_create_gc(c, gc[GC_DRAW], scr->root, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND, (const uint32_t []){ fgc, bgc });
-
-    gc[GC_CLEAR] = xcb_generate_id(c);
-    xcb_create_gc(c, gc[GC_CLEAR], scr->root, XCB_GC_FOREGROUND, (const uint32_t []){ bgc });
-
-    gc[GC_ATTR] = xcb_generate_id(c);
-    xcb_create_gc(c, gc[GC_ATTR], scr->root, XCB_GC_FOREGROUND, (const uint32_t []){ ugc });
 
     /* Generate a list of screens */
     const xcb_query_extension_reply_t *qe_reply;
@@ -766,9 +783,21 @@ init (void)
     /* For WM that support EWMH atoms */
     set_ewmh_atoms();
 
-    /* Make the bar visible */
-    for (monitor_t *mon = monhead; mon; mon = mon->next)
+    /* Create the gc for drawing */
+    gc[GC_DRAW] = xcb_generate_id(c);
+    xcb_create_gc(c, gc[GC_DRAW], monhead->pixmap, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND, (const uint32_t []){ fgc, bgc });
+
+    gc[GC_CLEAR] = xcb_generate_id(c);
+    xcb_create_gc(c, gc[GC_CLEAR], monhead->pixmap, XCB_GC_FOREGROUND, (const uint32_t []){ bgc });
+
+    gc[GC_ATTR] = xcb_generate_id(c);
+    xcb_create_gc(c, gc[GC_ATTR], monhead->pixmap, XCB_GC_FOREGROUND, (const uint32_t []){ ugc });
+
+    /* Make the bar visible and clear the pixmap */
+    for (monitor_t *mon = monhead; mon; mon = mon->next) {
+        fill_rect(mon->pixmap, gc[GC_CLEAR], 0, 0, mon->width, bh);
         xcb_map_window(c, mon->window);
+    }
 
     xcb_flush(c);
 }
@@ -793,6 +822,8 @@ cleanup (void)
         free(monhead);
         monhead = next;
     }
+
+    xcb_free_colormap(c, colormap);
 
     if (gc[GC_DRAW])
         xcb_free_gc(c, gc[GC_DRAW]);
@@ -934,8 +965,10 @@ main (int argc, char **argv)
     xconn();
 
     /* B/W combo */
-    dbgc = bgc = scr->black_pixel;
-    dfgc = fgc = scr->white_pixel;
+    dbgc = bgc = parse_color("black", NULL, scr->black_pixel);
+    dfgc = fgc = parse_color("white", NULL, scr->white_pixel);
+
+    ugc = fgc;
 
     char ch;
     while ((ch = getopt(argc, argv, "hg:m:bdf:a:pu:B:F:")) != -1) {
@@ -948,13 +981,11 @@ main (int argc, char **argv)
                         "\t-b Put bar at the bottom of the screen\n"
                         "\t-d Force docking (use this if your WM isn't EWMH compliant)\n"
                         "\t-f Bar font list, comma separated\n"
-                        "\t-a Set the bar alpha ranging from 0.0 to 1.0 (requires a compositor)\n"
                         "\t-p Don't close after the data ends\n"
                         "\t-u Set the underline/overline height in pixels\n"
-                        "\t-B Set background color in #RRGGBB\n"
-                        "\t-F Set foreground color in #RRGGBB\n", argv[0]);
+                        "\t-B Set background color in #AARRGGBB\n"
+                        "\t-F Set foreground color in #AARRGGBB\n", argv[0]);
                 exit (EXIT_SUCCESS);
-            case 'a': ba = strtof(optarg, NULL); break;
             case 'g': (void)parse_geometry_string(optarg, geom_v); break;
             case 'm': (void)parse_monitor_string(optarg); break;
             case 'p': permanent = true; break;
@@ -972,16 +1003,11 @@ main (int argc, char **argv)
     bh = geom_v[1];
     bx = geom_v[2];
 
-    /* Sanitize the arguments */
+    /* Check the geometry */
     if (bx >= scr->width_in_pixels || bx + bw > scr->width_in_pixels) {
         fprintf(stderr, "The geometry specified doesn't fit the screen!\n");
         return EXIT_FAILURE;
     }
-
-    if (ba > 1.0f)
-        ba = 1.0f;
-    if (ba < 0.0f)
-        ba = 0.0f;
 
     /* Do the heavy lifting */
     init();
