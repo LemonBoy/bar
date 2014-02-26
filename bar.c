@@ -1003,12 +1003,6 @@ main (int argc, char **argv)
     bh = geom_v[1];
     bx = geom_v[2];
 
-    /* Check the geometry */
-    if (bx >= scr->width_in_pixels || bx + bw > scr->width_in_pixels) {
-        fprintf(stderr, "The geometry specified doesn't fit the screen!\n");
-        return EXIT_FAILURE;
-    }
-
     /* Do the heavy lifting */
     init();
     /* Get the fd to Xserver */
