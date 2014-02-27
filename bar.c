@@ -18,23 +18,33 @@
 #define min(a,b) ((a) < (b) ? (a) : (b))
 #define indexof(c,s) (strchr((s),(c))-(s))
 #define MONITORS_MAX 32
+#define N 10
 
 typedef struct font_t {
     xcb_font_t ptr;
-    uint32_t descent;
-    uint32_t height;
+    int descent, height;
     uint16_t char_max;
     uint16_t char_min;
     xcb_charinfo_t *width_lut;
 } font_t;
 
 typedef struct monitor_t {
-    uint32_t x;
-    uint32_t width;
+    int x, width;
     xcb_window_t window;
     xcb_pixmap_t pixmap;
     struct monitor_t *prev, *next;
 } monitor_t;
+
+typedef struct area_t {
+    int begin, end, align;
+    xcb_window_t window;
+    char *cmd;
+} area_t;
+
+typedef struct area_stack_t {
+    int pos;
+    area_t slot[N];
+} area_stack_t;
 
 enum {
     ATTR_OVERL = (1<<0),
@@ -56,7 +66,6 @@ enum {
 
 static xcb_connection_t *c;
 static xcb_screen_t *scr;
-static xcb_drawable_t canvas;
 static xcb_gcontext_t gc[GC_MAX];
 static xcb_visualid_t visual;
 static xcb_colormap_t colormap;
@@ -70,38 +79,10 @@ static int bu = 1; /* Underline height */
 static char *mfont, *afont;
 static uint32_t fgc, bgc, ugc;
 static uint32_t dfgc, dbgc;
+static area_stack_t astack;
 static uint32_t mons = 0;
 static int nmons = 0;
 static int monlist[MONITORS_MAX];
-
-void
-set_monitor (int n)
-{
-    if (n >= MONITORS_MAX || n < 0) {
-        fprintf(stderr, "Invalic monitor specified: %d\n", n);
-        return;
-    }
-    mons |= 1 << n;
-    monlist[nmons++] = n;
-}
-
-int
-get_monitor_pos (int n)
-{
-    if (n < MONITORS_MAX && (mons & (1 << n)))
-        for (int i = 0; i < nmons; i++)
-            if (monlist[i] == n)
-                return i;
-    return -1;
-}
-
-int
-get_monitor_at_pos (int n)
-{
-    if (n < nmons)
-        return monlist[n];
-    return -1;
-}
 
 void
 update_gc (void)
@@ -130,7 +111,7 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
         case ALIGN_C:
             xcb_copy_area(c, mon->pixmap, mon->pixmap, gc[GC_DRAW], mon->width / 2 - x / 2, 0,
                     mon->width / 2 - (x + ch_width) / 2, 0, x, bh);
-            x = mon->width / 2 - (x + ch_width) / 2 + x;
+            x = mon->width / 2 - ch_width / 2 + x / 2;
             break;
         case ALIGN_R:
             xcb_copy_area(c, mon->pixmap, mon->pixmap, gc[GC_DRAW], mon->width - x, 0,
@@ -220,6 +201,94 @@ set_attribute (const char modifier, const char attribute)
     }
 }
 
+
+area_t *
+area_get (xcb_window_t win, const int x)
+{
+    for (int i = 0; i < astack.pos; i++)
+        if (astack.slot[i].window == win && x > astack.slot[i].begin && x < astack.slot[i].end)
+            return &astack.slot[i];
+    return NULL;
+}
+
+void
+area_shift (xcb_window_t win, const int align, int delta)
+{
+    if (align == ALIGN_L)
+        return;
+    if (align == ALIGN_C)
+        delta /= 2;
+
+    for (int i = 0; i < astack.pos; i++) {
+        if (astack.slot[i].window == win && astack.slot[i].align == align) {
+            astack.slot[i].begin -= delta;
+            astack.slot[i].end -= delta;
+        }
+    }
+}
+
+bool
+area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x, const int align)
+{
+    char *p = str;
+    area_t *a = &astack.slot[astack.pos];
+
+    if (astack.pos == N) {
+        fprintf(stderr, "astack overflow!\n");
+        return false;
+    }
+
+    /* A wild close area tag appeared! */
+    if (*p != ':') {
+        *end = p;
+
+        /* Basic safety checks */
+        if (!a->cmd || a->align != align || a->window != mon->window)
+            return false;
+
+        const int size = x - a->begin;
+
+        switch (align) {
+            case ALIGN_L:
+                a->end = x;
+                break;
+            case ALIGN_C:
+                a->begin = mon->width / 2 - size / 2 + a->begin / 2;
+                a->end = a->begin + size;
+                break;
+            case ALIGN_R:
+                /* The newest is the rightmost one */
+                a->begin = mon->width - size;
+                a->end = mon->width;
+                break;
+        }
+
+        astack.pos++;
+
+        return true;
+    }
+
+    char *trail = strchr(++p, ':');
+
+    /* Find the trailing : and make sure it's whitin the formatting block, also reject empty commands */
+    if (!trail || p == trail || trail > optend) {
+        *end = p;
+        return false;
+    }
+
+    *trail = '\0';
+
+    /* This is a pointer to the string buffer allocated in the main */
+    a->cmd = p;
+    a->align = align;
+    a->begin = x;
+    a->window = mon->window;
+
+    *end = trail + 1;
+
+    return true;
+}
+
 void
 parse (char *text)
 {
@@ -232,8 +301,9 @@ parse (char *text)
 
     pos_x = 0;
     align = ALIGN_L;
-    cur_font = main_font;
     cur_mon = monhead;
+
+    memset(&astack, 0, sizeof(area_stack_t));
 
     for (monitor_t *m = monhead; m; m = m->next)
         fill_rect(m->pixmap, gc[GC_CLEAR], 0, 0, bw, bh);
@@ -262,6 +332,10 @@ parse (char *text)
                     case 'l': pos_x = 0; align = ALIGN_L; break;
                     case 'c': pos_x = 0; align = ALIGN_C; break;
                     case 'r': pos_x = 0; align = ALIGN_R; break;
+
+                    case 'A': 
+                              area_add(p, end, &p, cur_mon, pos_x, align);
+                              break;
 
                     case 'B': bgc = parse_color(p, &p, dbgc); update_gc(); break;
                     case 'F': fgc = parse_color(p, &p, dfgc); update_gc(); break;
@@ -321,7 +395,10 @@ parse (char *text)
 
             xcb_change_gc(c, gc[GC_DRAW] , XCB_GC_FONT, (const uint32_t []){ cur_font->ptr });
 
-            pos_x += draw_char(cur_mon, cur_font, pos_x, align, ucs);
+            int w = draw_char(cur_mon, cur_font, pos_x, align, ucs);
+
+            pos_x += w;
+            area_shift(cur_mon->window, align, w);
         }
     }
 }
@@ -429,7 +506,7 @@ monitor_new (int x, int y, int width, int height)
 {
     monitor_t *ret;
 
-    ret = malloc(sizeof(monitor_t));
+    ret = calloc(1, sizeof(monitor_t));
     if (!ret) {
         fprintf(stderr, "Failed to allocate new monitor\n");
         exit(EXIT_FAILURE);
@@ -447,7 +524,7 @@ monitor_new (int x, int y, int width, int height)
             x, win_y, width, bh, 0,
             XCB_WINDOW_CLASS_INPUT_OUTPUT, visual,
             XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP,
-            (const uint32_t []){ bgc, bgc, dock, XCB_EVENT_MASK_EXPOSURE, colormap });
+            (const uint32_t []){ bgc, bgc, dock, XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_BUTTON_PRESS, colormap });
 
     ret->pixmap = xcb_generate_id(c);
     xcb_create_pixmap(c, depth, ret->pixmap, ret->window, width, bh);
@@ -483,6 +560,35 @@ rect_sort_cb (const void *p1, const void *p2)
         return  1;
 
     return 0;
+}
+
+void
+set_monitor (int n)
+{
+    if (n >= MONITORS_MAX || n < 0) {
+        fprintf(stderr, "Invalic monitor specified: %d\n", n);
+        return;
+    }
+    mons |= 1 << n;
+    monlist[nmons++] = n;
+}
+
+int
+get_monitor_pos (int n)
+{
+    if (n < MONITORS_MAX && (mons & (1 << n)))
+        for (int i = 0; i < nmons; i++)
+            if (monlist[i] == n)
+                return i;
+    return -1;
+}
+
+int
+get_monitor_at_pos (int n)
+{
+    if (n < nmons)
+        return monlist[n];
+    return -1;
 }
 
 void
@@ -548,7 +654,6 @@ monitor_create_chain (xcb_rectangle_t *rects, const int num)
 void
 get_randr_monitors (void)
 {
-    xcb_generic_error_t *err;
     xcb_randr_get_screen_resources_current_reply_t *rres_reply;
     xcb_randr_output_t *outputs;
     int i, j, num, valid = 0;
@@ -653,7 +758,7 @@ get_xinerama_monitors (void)
 {
     xcb_xinerama_query_screens_reply_t *xqs_reply;
     xcb_xinerama_screen_info_iterator_t iter;
-    int screens, width = bw;
+    int screens;
 
     xqs_reply = xcb_xinerama_query_screens_reply(c,
             xcb_xinerama_query_screens_unchecked(c), NULL);
@@ -952,6 +1057,7 @@ main (int argc, char **argv)
     };
     xcb_generic_event_t *ev;
     xcb_expose_event_t *expose_ev;
+    xcb_button_press_event_t *press_ev;
     char input[2048] = {0, };
     bool permanent = false;
     int geom_v[4] = { -1, -1, 0, 0 };
@@ -1029,8 +1135,17 @@ main (int argc, char **argv)
 
                     switch (ev->response_type & 0x7F) {
                         case XCB_EXPOSE:
-                            if (expose_ev->count == 0) redraw = true;
-                        break;
+                            if (expose_ev->count == 0) 
+                                redraw = true;
+                            break;
+                        case XCB_BUTTON_PRESS:
+                            press_ev = (xcb_button_press_event_t *)ev;
+                            /* Respond to left click */
+                            if (press_ev->detail == XCB_BUTTON_INDEX_1) {
+                                area_t *a = area_get(press_ev->event, press_ev->event_x);
+                                if (a) system(a->cmd);
+                            }
+                            break;
                     }
 
                     free(ev);
