@@ -4,7 +4,7 @@ bar - bar ain't recursive
 
 =head1 SYNOPSIS
 
-I<bar> [-h | -g I<width>B<x>I<height>B<+>I<x> | -b | -d | -f I<font> | -p | -u I<pixel> | -B I<color> | -F I<color>]
+I<bar> [-h | -g I<width>B<x>I<height>B<+>I<x> | -m I<monitor>B<:>I<monitor>B<:>... | -b | -d | -f I<font> | -p | -u I<pixel> | -B I<color> | -F I<color>]
 
 =head1 DESCRIPTION
 
@@ -21,6 +21,10 @@ Display the help and exit.
 =item B<-g> I<width>B<x>I<height>B<+>I<x>
 
 Set the window geometry. If a parameter is omitted it's filled with the default value.
+
+=item B<-m> I<monitor>B<:>I<monitor>B<:>I<...>
+
+Set monitors to be used and in what order. Positive numeric arguments only, separated by colons.
 
 =item B<-b>
 
