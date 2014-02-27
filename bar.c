@@ -563,35 +563,6 @@ rect_sort_cb (const void *p1, const void *p2)
 }
 
 void
-set_monitor (int n)
-{
-    if (n >= MONITORS_MAX || n < 0) {
-        fprintf(stderr, "Invalic monitor specified: %d\n", n);
-        return;
-    }
-    mons |= 1 << n;
-    monlist[nmons++] = n;
-}
-
-int
-get_monitor_pos (int n)
-{
-    if (n < MONITORS_MAX && (mons & (1 << n)))
-        for (int i = 0; i < nmons; i++)
-            if (monlist[i] == n)
-                return i;
-    return -1;
-}
-
-int
-get_monitor_at_pos (int n)
-{
-    if (n < nmons)
-        return monlist[n];
-    return -1;
-}
-
-void
 monitor_create_chain (xcb_rectangle_t *rects, const int num)
 {
     int i, cnt;
@@ -1024,7 +995,13 @@ parse_monitor_string (char *str)
             fprintf(stderr, "Monitor value out of range\n");
             return false;
         }
-        set_monitor(j);
+
+        if (j >= MONITORS_MAX || j < 0) {
+            fprintf(stderr, "Invalid monitor specified: %d\n", j);
+            continue;
+        }
+        mons |= 1 << j;
+        monlist[nmons++] = j;
     }
 
     return true;
