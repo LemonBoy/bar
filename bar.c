@@ -1037,8 +1037,8 @@ main (int argc, char **argv)
                             press_ev = (xcb_button_press_event_t *)ev;
                             /* Respond to left click */
                             if (press_ev->detail == XCB_BUTTON_INDEX_1) {
-                                area_t *a = area_get(press_ev->event, press_ev->event_x);
-                                if (a) system(a->cmd);
+                                area_t *area = area_get(press_ev->event, press_ev->event_x);
+                                if (area) { write(STDOUT_FILENO, area->cmd, strlen(area->cmd)); write(STDOUT_FILENO, "\n", 1); }
                             }
                             break;
                     }
