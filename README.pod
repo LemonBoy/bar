@@ -146,6 +146,10 @@ Draw a line under the text.
 
 =back
 
+=head1 OUTPUT
+
+Clicking on an area makes bar output the command to stdout, followed by a newline, allowing the user to pipe it into a script, execute it or simply ignore it. Simple and powerful, that's it.
+
 =head1 WWW
 
 L<git repository|https://github.com/LemonBoy/bar>
