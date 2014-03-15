@@ -108,7 +108,7 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
         case ALIGN_C:
             xcb_copy_area(c, mon->pixmap, mon->pixmap, gc[GC_DRAW], mon->width / 2 - x / 2, 0,
                     mon->width / 2 - (x + ch_width) / 2, 0, x, bh);
-            x = mon->width / 2 - ch_width / 2 + x / 2;
+            x = mon->width / 2 - (x + ch_width) / 2 + x;
             break;
         case ALIGN_R:
             xcb_copy_area(c, mon->pixmap, mon->pixmap, gc[GC_DRAW], mon->width - x, 0,
