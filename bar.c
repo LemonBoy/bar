@@ -74,7 +74,7 @@ static font_t *main_font, *alt_font;
 static uint32_t attrs = 0;
 static bool dock = false;
 static bool topbar = true;
-static int bw = -1, bh = -1, bx = 0;
+static int bw = -1, bh = -1, bx = 0, by = 0;
 static int bu = 1; /* Underline height */
 static char *mfont, *afont;
 static uint32_t fgc, bgc, ugc;
@@ -118,7 +118,7 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
     }
 
     /* Draw the background first */
-    fill_rect(mon->pixmap, gc[GC_CLEAR], x, 0, ch_width, bh);
+    fill_rect(mon->pixmap, gc[GC_CLEAR], x, by, ch_width, bh);
 
     /* xcb accepts string in UCS-2 BE, so swap */
     ch = (ch >> 8) | (ch << 8);
@@ -513,7 +513,7 @@ monitor_new (int x, int y, int width, int height)
     ret->width = width;
     ret->next = ret->prev = NULL;
 
-    int win_y = (topbar ? 0 : height - bh) + y;
+    int win_y = (topbar ? by : height - bh - by) + y;
     ret->window = xcb_generate_id(c);
 
     int depth = (visual == scr->root_visual) ? XCB_COPY_FROM_PARENT : 32;
@@ -973,7 +973,7 @@ main (int argc, char **argv)
             case 'h':
                 printf ("usage: %s [-h | -g | -b | -d | -f | -a | -p | -u | -B | -F]\n"
                         "\t-h Show this help\n"
-                        "\t-g Set the bar geometry {width}x{height})\n"
+                        "\t-g Set the bar geometry {width}x{height}+{xoffset}+{yoffset}\n"
                         "\t-b Put bar at the bottom of the screen\n"
                         "\t-d Force docking (use this if your WM isn't EWMH compliant)\n"
                         "\t-f Bar font list, comma separated\n"
@@ -997,9 +997,10 @@ main (int argc, char **argv)
     bw = geom_v[0];
     bh = geom_v[1];
     bx = geom_v[2];
+    by = geom_v[3];
 
     /* Check the geometry */
-    if (bx >= scr->width_in_pixels || bx + bw > scr->width_in_pixels) {
+    if (bx + bw > scr->width_in_pixels || by + bh > scr->height_in_pixels) {
         fprintf(stderr, "The geometry specified doesn't fit the screen!\n");
         return EXIT_FAILURE;
     }
