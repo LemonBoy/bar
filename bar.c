@@ -329,7 +329,7 @@ parse (char *text)
                     case 'c': pos_x = 0; align = ALIGN_C; break;
                     case 'r': pos_x = 0; align = ALIGN_R; break;
 
-                    case 'A': 
+                    case 'A':
                               area_add(p, end, &p, cur_mon, pos_x, align);
                               break;
 
@@ -939,6 +939,26 @@ parse_font_list (char *str)
     return;
 }
 
+char*
+getInput(FILE* file, size_t size) {
+	char *input;
+	int ch;
+	size_t len = 0;
+	input = realloc(NULL, sizeof(char)*size);
+
+	if(!input)return input;
+	while(EOF!=(ch=fgetc(file)) && ch != '\n') {
+		input[len++]=ch;
+		if(len==size) {
+			input = realloc(input, sizeof(char)*(size*=2));
+			if(!input)return input;
+		}
+	}
+
+	input[len++]='\0';
+	return realloc(input, sizeof(char)*len);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -949,7 +969,7 @@ main (int argc, char **argv)
     xcb_generic_event_t *ev;
     xcb_expose_event_t *expose_ev;
     xcb_button_press_event_t *press_ev;
-    char input[2048] = {0, };
+    char *input;
     bool permanent = false;
     int geom_v[4] = { -1, -1, 0, 0 };
 
@@ -1018,10 +1038,11 @@ main (int argc, char **argv)
                 else break;                         /* ...bail out */
             }
             if (pollin[0].revents & POLLIN) { /* New input, process it */
-                if (fgets(input, sizeof(input), stdin) == NULL)
-                    break; /* EOF received */
+                input = getInput(stdin, 1024);
+                if (input == NULL) break; /* EOF recieved */
 
                 parse(input);
+                free(input);
                 redraw = true;
             }
             if (pollin[1].revents & POLLIN) { /* Xserver broadcasted an event */
@@ -1030,7 +1051,7 @@ main (int argc, char **argv)
 
                     switch (ev->response_type & 0x7F) {
                         case XCB_EXPOSE:
-                            if (expose_ev->count == 0) 
+                            if (expose_ev->count == 0)
                                 redraw = true;
                             break;
                         case XCB_BUTTON_PRESS:
