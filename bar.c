@@ -156,9 +156,20 @@ parse_color (const char *str, char **end, const uint32_t def)
     if (str[0] == '#') {
         errno = 0;
         uint32_t tmp = strtoul(str + 1, end, 16);
-        /* Some error checking it's good */
+        /* Some error checking is definitely good */
         if (errno)
-            return def;
+            tmp = def;
+        /* Xorg uses colors with premultiplied alpha.
+         * Don't bother if we didn't acquire a rgba visual. */
+        if (visual != scr->root_visual) {
+            const uint8_t a = ((tmp>>24)&255);
+            if (a < 255) {
+                /* Handle overflow by truncating the result, should be ok */
+                const uint32_t t1 = (tmp&0xff00ff) * (0x100-a);
+                const uint32_t t2 = (tmp&0x00ff00) * (0x100-a);
+                tmp = (a<<24)|(t1&0xff00ff)|(t2&0x00ff00);
+            }
+        }
         return tmp;
     }
 
@@ -302,7 +313,7 @@ parse (char *text)
 
     memset(&astack, 0, sizeof(area_stack_t));
 
-    fill_rect(cur_mon->pixmap, gc[GC_CLEAR], 0, 0, bw, bh);
+    fill_rect(cur_mon->pixmap, gc[GC_CLEAR], 0, 0, cur_mon->width, bh);
 
     for (;;) {
         if (*p == '\0' || *p == '\n')
