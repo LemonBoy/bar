@@ -302,7 +302,8 @@ parse (char *text)
 
     memset(&astack, 0, sizeof(area_stack_t));
 
-    fill_rect(cur_mon->pixmap, gc[GC_CLEAR], 0, 0, bw, bh);
+    for (monitor_t *m = monhead; m != NULL; m = m->next)
+        fill_rect(m->pixmap, gc[GC_CLEAR], 0, 0, m->width, bh);
 
     for (;;) {
         if (*p == '\0' || *p == '\n')
@@ -356,7 +357,6 @@ parse (char *text)
 
                               p++;
                               pos_x = 0;
-                              fill_rect(cur_mon->pixmap, gc[GC_CLEAR], 0, 0, cur_mon->width, bh);
                               break;
 
                     /* In case of error keep parsing after the closing } */
