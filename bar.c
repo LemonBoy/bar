@@ -562,14 +562,40 @@ rect_sort_cb (const void *p1, const void *p2)
 void
 monitor_create_chain (xcb_rectangle_t *rects, const int num)
 {
-    int width = bw;
+    int i;
+    int width = 0, height = 0;
     int left = bx;
 
     /* Sort before use */
     qsort(rects, num, sizeof(xcb_rectangle_t), rect_sort_cb);
 
+    for (i = 0; i < num; i++) {
+        int h = rects[i].y + rects[i].height;
+        /* Accumulated width of all monitors */
+        width += rects[i].width;
+        /* Get height of screen from y_offset + height of lowest monitor */
+        if (h >= height)
+        height = h;
+    }
+
+    /* Check the geometry */
+    if (bx + bw > width || by + bh > height) {
+        fprintf(stderr, "The geometry specified doesn't fit the screen!\n");
+        exit(EXIT_FAILURE);
+    }
+
+
+    if (bw < 0)
+        bw = width - bx;
+
+    if (bh < 0 || bh > height)
+        bh = main_font->height + bu + 2;
+
     /* Left is a positive number or zero therefore monitors with zero width are excluded */
-    for (int i = 0; i < num; i++) {
+    width = bw;
+    for (i = 0; i < num; i++) {
+        if (rects[i].y + rects[i].height < by)
+            continue;
         if (rects[i].width > left) {
             monitor_t *mon = monitor_new(
                     rects[i].x + left,
@@ -755,10 +781,6 @@ xconn (void)
 void
 init (void)
 {
-    /* If I fits I sits */
-    if (bw < 0)
-        bw = scr->width_in_pixels - bx;
-
     /* Load the fonts */
     main_font = font_load(mfont ? mfont : "fixed");
     if (!main_font)
@@ -770,10 +792,6 @@ init (void)
 
     /* To make the alignment uniform */
     main_font->height = alt_font->height = max(main_font->height, alt_font->height);
-
-    /* Adjust the height */
-    if (bh < 0 || bh > scr->height_in_pixels)
-        bh = main_font->height + bu + 2;
 
     /* Generate a list of screens */
     const xcb_query_extension_reply_t *qe_reply;
@@ -801,9 +819,24 @@ init (void)
         }
     }
 
-    if (!monhead)
+    if (!monhead) {
+        /* Check the geometry */
+        if (bx + bw > scr->width_in_pixels || by + bh > scr->height_in_pixels) {
+            fprintf(stderr, "The geometry specified doesn't fit the screen!\n");
+            exit(EXIT_FAILURE);
+        }
+
+        /* If I fits I sits */
+        if (bw < 0)
+            bw = scr->width_in_pixels - bx;
+
+        /* Adjust the height */
+        if (bh < 0 || bh > scr->height_in_pixels)
+            bh = main_font->height + bu + 2;
+
         /* If no RandR outputs or Xinerama screens, fall back to using whole screen */
         monhead = monitor_new(0, 0, bw, scr->height_in_pixels);
+    }
 
     if (!monhead)
         exit(EXIT_FAILURE);
@@ -998,12 +1031,6 @@ main (int argc, char **argv)
     bh = geom_v[1];
     bx = geom_v[2];
     by = geom_v[3];
-
-    /* Check the geometry */
-    if (bx + bw > scr->width_in_pixels || by + bh > scr->height_in_pixels) {
-        fprintf(stderr, "The geometry specified doesn't fit the screen!\n");
-        return EXIT_FAILURE;
-    }
 
     /* Do the heavy lifting */
     init();
