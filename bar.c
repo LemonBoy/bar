@@ -37,6 +37,7 @@ typedef struct area_t {
     int begin, end, align;
     xcb_window_t window;
     char *cmd;
+    bool print_pos;
 } area_t;
 
 #define N 10
@@ -233,6 +234,11 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
     if (astack.pos == N) {
         fprintf(stderr, "astack overflow!\n");
         return false;
+    }
+
+    if (*p == 'W') {
+    	a->print_pos = true;
+    	p++;
     }
 
     /* A wild close area tag appeared! */
@@ -1039,7 +1045,15 @@ main (int argc, char **argv)
                             /* Respond to left click */
                             if (press_ev->detail == XCB_BUTTON_INDEX_1) {
                                 area_t *area = area_get(press_ev->event, press_ev->event_x);
-                                if (area) { write(STDOUT_FILENO, area->cmd, strlen(area->cmd)); write(STDOUT_FILENO, "\n", 1); }
+                                if (area) {
+                                	write(STDOUT_FILENO, area->cmd, strlen(area->cmd));
+                                	if (area->print_pos) {
+                                		char pos[6];
+                                		snprintf(pos, 6, " %d", area->begin);
+                                		write(STDOUT_FILENO, pos, 6);
+                                	}
+                                	write(STDOUT_FILENO, "\n", 1); 
+                            	}
                             }
                             break;
                     }
