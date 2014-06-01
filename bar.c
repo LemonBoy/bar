@@ -624,7 +624,7 @@ get_randr_monitors (void)
 {
     xcb_randr_get_screen_resources_current_reply_t *rres_reply;
     xcb_randr_output_t *outputs;
-    int num, valid = 0;
+    int i, j, num, valid = 0;
 
     rres_reply = xcb_randr_get_screen_resources_current_reply(c,
             xcb_randr_get_screen_resources_current(c, scr->root), NULL);
@@ -647,7 +647,7 @@ get_randr_monitors (void)
     xcb_rectangle_t rects[num];
 
     /* Get all outputs */
-    for (int i = 0; i < num; i++) {
+    for (i = 0; i < num; i++) {
         xcb_randr_get_output_info_reply_t *oi_reply;
         xcb_randr_get_crtc_info_reply_t *ci_reply;
 
@@ -683,11 +683,11 @@ get_randr_monitors (void)
     free(rres_reply);
 
     /* Check for clones and inactive outputs */
-    for (int i = 0; i < num; i++) {
+    for (i = 0; i < num; i++) {
         if (rects[i].width == 0)
             continue;
 
-        for (int j = 0; j < num; j++) {
+        for (j = 0; j < num; j++) {
             /* Does I countain J ? */
 
             if (i != j && rects[j].width) {
@@ -705,7 +705,11 @@ get_randr_monitors (void)
         return;
     }
 
-    monitor_create_chain(rects, num);
+	for (i = j = 0; i < num && j < valid; i++)
+		if (rects[i].width != 0)
+			r[j++] = rects[i];
+
+    monitor_create_chain(r, valid);
 }
 
 void
