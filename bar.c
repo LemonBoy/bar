@@ -704,6 +704,8 @@ get_randr_monitors (void)
         return;
     }
 
+	xcb_rectangle_t r[valid];
+
 	for (i = j = 0; i < num && j < valid; i++)
 		if (rects[i].width != 0)
 			r[j++] = rects[i];
