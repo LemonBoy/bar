@@ -825,12 +825,6 @@ init (void)
     }
 
     if (!monhead) {
-        /* Check the geometry */
-        if (bx + bw > scr->width_in_pixels || by + bh > scr->height_in_pixels) {
-            fprintf(stderr, "The geometry specified doesn't fit the screen!\n");
-            exit(EXIT_FAILURE);
-        }
-
         /* If I fits I sits */
         if (bw < 0)
             bw = scr->width_in_pixels - bx;
@@ -838,6 +832,12 @@ init (void)
         /* Adjust the height */
         if (bh < 0 || bh > scr->height_in_pixels)
             bh = main_font->height + bu + 2;
+
+        /* Check the geometry */
+        if (bx + bw > scr->width_in_pixels || by + bh > scr->height_in_pixels) {
+            fprintf(stderr, "The geometry specified doesn't fit the screen!\n");
+            exit(EXIT_FAILURE);
+        }
 
         /* If no RandR outputs or Xinerama screens, fall back to using whole screen */
         monhead = monitor_new(0, 0, bw, scr->height_in_pixels);
