@@ -578,18 +578,17 @@ monitor_create_chain (xcb_rectangle_t *rects, const int num)
         height = h;
     }
 
-    /* Check the geometry */
-    if (bx + bw > width || by + bh > height) {
-        fprintf(stderr, "The geometry specified doesn't fit the screen!\n");
-        exit(EXIT_FAILURE);
-    }
-
-
     if (bw < 0)
         bw = width - bx;
 
     if (bh < 0 || bh > height)
         bh = main_font->height + bu + 2;
+
+    /* Check the geometry */
+    if (bx + bw > width || by + bh > height) {
+        fprintf(stderr, "The geometry specified doesn't fit the screen!\n");
+        exit(EXIT_FAILURE);
+    }
 
     /* Left is a positive number or zero therefore monitors with zero width are excluded */
     width = bw;
