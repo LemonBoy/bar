@@ -162,7 +162,7 @@ parse_color (const char *str, char **end, const uint32_t def)
         /* Xorg uses colors with premultiplied alpha.
          * Don't do anything if we didn't acquire a rgba visual. */
         if (visual != scr->root_visual) {
-            const uint8_t a = (*end - (str + 1) <= 6) ? 0xff : ((tmp>>24)&255);
+            const uint8_t a = ((tmp>>24)&255);
             const uint32_t t1 = (tmp&0xff00ff) * (0x100-a);
             const uint32_t t2 = (tmp&0x00ff00) * (0x100-a);
             tmp = (a<<24)|(t1&0xff00ff)|(t2&0x00ff00);
