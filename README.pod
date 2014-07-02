@@ -146,6 +146,16 @@ Draw a line over the text.
 
 Draw a line under the text.
 
+B<Font usage>
+
+=item B<+>I<fm>
+
+Sets the current font to the main (1st) font
+
+= itemB<+>I<fa>
+
+Sets the current font to the alternative (2nd) font
+
 =back
 
 =head1 OUTPUT

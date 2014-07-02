@@ -25,7 +25,7 @@ typedef struct font_t {
     uint16_t char_min;
     xcb_charinfo_t *width_lut;
 } font_t;
-
+//
 typedef struct monitor_t {
     int x, width;
     xcb_window_t window;
@@ -80,6 +80,7 @@ static char *mfont, *afont;
 static uint32_t fgc, bgc, ugc;
 static uint32_t dfgc, dbgc;
 static area_stack_t astack;
+static bool use_alt_font = false;
 
 void
 update_gc (void)
@@ -371,6 +372,14 @@ parse (char *text)
                               pos_x = 0;
                               break;
 
+                    case 'f':
+                              if(*p == 'm') 
+                              { use_alt_font = false; }
+                              else if(*p == 'a')
+                              { use_alt_font = true; }
+                              break;
+
+
                     /* In case of error keep parsing after the closing } */
                     default:
                         p = end;
@@ -399,8 +408,13 @@ parse (char *text)
                 p += 1;
             }
 
+            /* What font should be primary, use main: %(fm) or use alt %(fa) */
             /* If the character is outside the main font charset use the alternate font */
-            cur_font = (ucs < main_font->char_min || ucs > main_font->char_max) ? alt_font : main_font;
+            if(use_alt_font == true) {
+                cur_font = (ucs < alt_font->char_min || ucs > alt_font->char_max) ? main_font : alt_font;
+            } else {
+                cur_font = (ucs < main_font->char_min || ucs > main_font->char_max) ? alt_font : main_font;
+            }
 
             xcb_change_gc(c, gc[GC_DRAW] , XCB_GC_FONT, (const uint32_t []){ cur_font->ptr });
 
