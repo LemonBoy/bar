@@ -2,6 +2,8 @@
 
 bar - bar ain't recursive
 
+=for HTML <a href="https://travis-ci.org/LemonBoy/bar"><img src="https://travis-ci.org/LemonBoy/bar.svg?branch=master"></a>
+
 =head1 SYNOPSIS
 
 I<bar> [-h | -g I<width>B<x>I<height>B<+>I<x>B<+>I<y> | -b | -d | -f I<font> | -p | -u I<pixel> | -B I<color> | -F I<color>]
