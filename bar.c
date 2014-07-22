@@ -65,6 +65,8 @@ enum {
 };
 
 #define MAX_FONT_COUNT 5
+/* 0 <= FONT_CACHE_SIZE <= 65536 */
+#define FONT_CACHE_SIZE 256
 
 static xcb_connection_t *c;
 static xcb_screen_t *scr;
@@ -74,6 +76,7 @@ static xcb_colormap_t colormap;
 static monitor_t *monhead, *montail;
 static font_t *font_list[MAX_FONT_COUNT];
 static char *font_names[MAX_FONT_COUNT];
+static font_t *font_cache[FONT_CACHE_SIZE];
 static uint32_t attrs = 0;
 static bool dock = false;
 static bool topbar = true;
@@ -306,8 +309,17 @@ select_drawable_font (uint16_t c)
                 font->width_lut[c - font->char_min].character_width != 0)
             return font;
     }
-
     return NULL;
+}
+
+/* returns NULL if character cannot be printed */
+font_t *
+select_drawable_font_cache (uint16_t c)
+{
+    if (c < FONT_CACHE_SIZE)
+        return font_cache[c];
+    else
+        return select_drawable_font(c);
 }
 
 void
@@ -826,6 +838,10 @@ init (void)
 
     if (!font_list[0])
         exit(EXIT_FAILURE);
+
+    for (uint16_t i = 0; i < FONT_CACHE_SIZE; i++) {
+        font_cache[i] = select_drawable_font(i);
+    }
 
     /* To make the alignment uniform, find maximum height */
     int maxh = font_list[0]->height;
