@@ -298,7 +298,7 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
 
 /* returns NULL if character cannot be printed */
 font_t *
-select_drawable_font (uint16_t c)
+select_drawable_font (const uint16_t c)
 {
     /* if the end is reached without finding an apropriate font, return NULL.
      * If the font can draw the character, return it.
@@ -839,9 +839,8 @@ init (void)
     if (!font_list[0])
         exit(EXIT_FAILURE);
 
-    for (uint16_t i = 0; i < FONT_CACHE_SIZE; i++) {
+    for (uint16_t i = 0; i < FONT_CACHE_SIZE; i++)
         font_cache[i] = select_drawable_font(i);
-    }
 
     /* To make the alignment uniform, find maximum height */
     int maxh = font_list[0]->height;
