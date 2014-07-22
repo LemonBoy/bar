@@ -296,8 +296,12 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
 font_t *
 select_drawable_font (uint16_t c)
 {
+    /* if the font is null, stop and return it, if it is outside of the character
+     * set or has a width of zero then move on; it cannot display the character.
+     */
     int i = 0;
-    while (all_fonts[i] != NULL && (c < all_fonts[i]->char_min || c > all_fonts[i]->char_max))
+    while (all_fonts[i] != NULL && (c < all_fonts[i]->char_min || c > all_fonts[i]->char_max
+                || all_fonts[i]->width_lut[c - all_fonts[i]->char_min].character_width == 0))
         i++;
 
     return all_fonts[i];
