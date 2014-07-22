@@ -64,15 +64,16 @@ enum {
     GC_MAX
 };
 
+#define MAX_FONT_COUNT 5
+
 static xcb_connection_t *c;
 static xcb_screen_t *scr;
 static xcb_gcontext_t gc[GC_MAX];
 static xcb_visualid_t visual;
 static xcb_colormap_t colormap;
 static monitor_t *monhead, *montail;
-#define MAX_FONT_COUNT 5
-static font_t *all_fonts[MAX_FONT_COUNT];
-static char *all_fonts_str[MAX_FONT_COUNT];
+static font_t *font_list[MAX_FONT_COUNT];
+static char *font_names[MAX_FONT_COUNT];
 static uint32_t attrs = 0;
 static bool dock = false;
 static bool topbar = true;
@@ -296,15 +297,17 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
 font_t *
 select_drawable_font (uint16_t c)
 {
-    /* if the font is null, stop and return it, if it is outside of the character
-     * set or has a width of zero then move on; it cannot display the character.
+    /* if the end is reached without finding an apropriate font, return NULL.
+     * If the font can draw the character, return it.
      */
-    int i = 0;
-    while (all_fonts[i] != NULL && (c < all_fonts[i]->char_min || c > all_fonts[i]->char_max
-                || all_fonts[i]->width_lut[c - all_fonts[i]->char_min].character_width == 0))
-        i++;
+    for (int i = 0; font_list[i] != NULL; i++) {
+        font_t *font = font_list[i];
+        if (c > font->char_min && c < font->char_max &&
+                font->width_lut[c - font->char_min].character_width != 0)
+            return font;
+    }
 
-    return all_fonts[i];
+    return NULL;
 }
 
 void
@@ -350,7 +353,7 @@ parse (char *text)
                     case 'c': pos_x = 0; align = ALIGN_C; break;
                     case 'r': pos_x = 0; align = ALIGN_R; break;
 
-                    case 'A': 
+                    case 'A':
                               button = XCB_BUTTON_INDEX_1;
                               /* The range is 1-5 */
                               if (isdigit(*p) && (*p > '0' && *p < '6'))
@@ -412,7 +415,7 @@ parse (char *text)
             }
 
             cur_font = select_drawable_font(ucs);
-            if (cur_font == NULL)
+            if (!cur_font)
                 continue;
 
             xcb_change_gc(c, gc[GC_DRAW] , XCB_GC_FONT, (const uint32_t []){ cur_font->ptr });
@@ -603,13 +606,11 @@ monitor_create_chain (xcb_rectangle_t *rects, const int num)
         height = h;
     }
 
-    /* TODO replace constants here and in init() with #defines */
-
     if (bw < 0)
         bw = width - bx;
 
     if (bh < 0 || bh > height)
-        bh = all_fonts[0]->height + bu + 2;
+        bh = font_list[0]->height + bu + 2;
 
     /* Check the geometry */
     if (bx + bw > width || by + bh > height) {
@@ -814,30 +815,26 @@ void
 init (void)
 {
     /* Load the fonts */
-    int i = 0;
-    while (all_fonts_str[i]) {
-        all_fonts[i] = font_load(all_fonts_str[i]);
-        if (!all_fonts[i])
+    for (int i = 0; font_names[i]; i++) {
+        font_list[i] = font_load(font_names[i]);
+        if (!font_list[i])
             exit(EXIT_FAILURE);
-        i++;
     }
 
-    if (all_fonts[0] == NULL)
-        all_fonts[0] = font_load("fixed");
+    if (!font_list[0])
+        font_list[0] = font_load("fixed");
 
-    if (!all_fonts[0])
+    if (!font_list[0])
         exit(EXIT_FAILURE);
 
     /* To make the alignment uniform, find maximum height */
-    int maxh = all_fonts[0]->height;
-    i = 0;
-    while (all_fonts[++i])
-        maxh = max(maxh, all_fonts[i]->height);
+    int maxh = font_list[0]->height;
+    for (int i = 1; font_list[i]; i++)
+        maxh = max(maxh, font_list[i]->height);
 
     /* Set maximum height to all fonts */
-    i = 0;
-    while (all_fonts[i])
-        all_fonts[i++]->height = maxh;
+    for (int i = 0; font_list[i]; i++)
+        font_list[i]->height = maxh;
 
     /* Generate a list of screens */
     const xcb_query_extension_reply_t *qe_reply;
@@ -866,8 +863,6 @@ init (void)
     }
 
     if (!monhead) {
-        /* TODO replace constants here and in monitor_create_chain() with #defines */
-
         /* If I fits I sits */
         if (bw < 0)
             bw = scr->width_in_pixels - bx;
@@ -914,11 +909,10 @@ init (void)
 void
 cleanup (void)
 {
-    int i = 0;
-    while (all_fonts[i]) {
-        xcb_close_font(c, all_fonts[i]->ptr);
-        free(all_fonts[i]);
-        all_fonts[i++] = NULL;
+    for (int i = 0; font_list[i]; i++) {
+        xcb_close_font(c, font_list[i]->ptr);
+        free(font_list[i]);
+        font_list[i] = NULL;
     }
 
     while (monhead) {
@@ -1009,14 +1003,13 @@ parse_font_list (char *str)
 
     tok = strtok(str, ",");
 
-    int i = 0;
-    while (tok) {
+    for (int i = 0; tok; i++) {
         if (i >= MAX_FONT_COUNT) {
             fprintf(stderr, "Too many fonts; maximum %i\n", MAX_FONT_COUNT);
             return;
         }
 
-        all_fonts_str[i++] = tok;
+        font_names[i] = tok;
         tok = strtok(NULL, ",");
     }
 }
