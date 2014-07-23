@@ -64,19 +64,24 @@ enum {
     GC_MAX
 };
 
+#define MAX_FONT_COUNT 5
+/* 0 <= FONT_CACHE_SIZE <= 65536 */
+#define FONT_CACHE_SIZE 256
+
 static xcb_connection_t *c;
 static xcb_screen_t *scr;
 static xcb_gcontext_t gc[GC_MAX];
 static xcb_visualid_t visual;
 static xcb_colormap_t colormap;
 static monitor_t *monhead, *montail;
-static font_t *main_font, *alt_font;
+static font_t *font_list[MAX_FONT_COUNT];
+static char *font_names[MAX_FONT_COUNT];
+static font_t *font_cache[FONT_CACHE_SIZE];
 static uint32_t attrs = 0;
 static bool dock = false;
 static bool topbar = true;
 static int bw = -1, bh = -1, bx = 0, by = 0;
 static int bu = 1; /* Underline height */
-static char *mfont, *afont;
 static uint32_t fgc, bgc, ugc;
 static uint32_t dfgc, dbgc;
 static area_stack_t astack;
@@ -98,10 +103,6 @@ fill_rect (xcb_drawable_t d, xcb_gcontext_t gc, int x, int y, int width, int hei
 int
 draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
 {
-    /* In the unlikely case that the font doesn't have the glyph wanted just do nothing */
-    if (ch < cur_font->char_min || ch > cur_font->char_max)
-        return 0;
-
     int ch_width = cur_font->width_lut[ch - cur_font->char_min].character_width;
 
     switch (align) {
@@ -295,6 +296,32 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
     return true;
 }
 
+/* returns NULL if character cannot be printed */
+font_t *
+select_drawable_font (const uint16_t c)
+{
+    /* if the end is reached without finding an apropriate font, return NULL.
+     * If the font can draw the character, return it.
+     */
+    for (int i = 0; font_list[i] != NULL; i++) {
+        font_t *font = font_list[i];
+        if (c > font->char_min && c < font->char_max &&
+                font->width_lut[c - font->char_min].character_width != 0)
+            return font;
+    }
+    return NULL;
+}
+
+/* returns NULL if character cannot be printed */
+font_t *
+select_drawable_font_cache (uint16_t c)
+{
+    if (c < FONT_CACHE_SIZE)
+        return font_cache[c];
+    else
+        return select_drawable_font(c);
+}
+
 void
 parse (char *text)
 {
@@ -338,7 +365,7 @@ parse (char *text)
                     case 'c': pos_x = 0; align = ALIGN_C; break;
                     case 'r': pos_x = 0; align = ALIGN_R; break;
 
-                    case 'A': 
+                    case 'A':
                               button = XCB_BUTTON_INDEX_1;
                               /* The range is 1-5 */
                               if (isdigit(*p) && (*p > '0' && *p < '6'))
@@ -399,8 +426,9 @@ parse (char *text)
                 p += 1;
             }
 
-            /* If the character is outside the main font charset use the alternate font */
-            cur_font = (ucs < main_font->char_min || ucs > main_font->char_max) ? alt_font : main_font;
+            cur_font = select_drawable_font(ucs);
+            if (!cur_font)
+                continue;
 
             xcb_change_gc(c, gc[GC_DRAW] , XCB_GC_FONT, (const uint32_t []){ cur_font->ptr });
 
@@ -594,7 +622,7 @@ monitor_create_chain (xcb_rectangle_t *rects, const int num)
         bw = width - bx;
 
     if (bh < 0 || bh > height)
-        bh = main_font->height + bu + 2;
+        bh = font_list[0]->height + bu + 2;
 
     /* Check the geometry */
     if (bx + bw > width || by + bh > height) {
@@ -799,16 +827,29 @@ void
 init (void)
 {
     /* Load the fonts */
-    main_font = font_load(mfont ? mfont : "fixed");
-    if (!main_font)
+    for (int i = 0; font_names[i]; i++) {
+        font_list[i] = font_load(font_names[i]);
+        if (!font_list[i])
+            exit(EXIT_FAILURE);
+    }
+
+    if (!font_list[0])
+        font_list[0] = font_load("fixed");
+
+    if (!font_list[0])
         exit(EXIT_FAILURE);
 
-    alt_font = font_load(afont ? afont : "fixed");
-    if (!alt_font)
-        exit(EXIT_FAILURE);
+    for (uint16_t i = 0; i < FONT_CACHE_SIZE; i++)
+        font_cache[i] = select_drawable_font(i);
 
-    /* To make the alignment uniform */
-    main_font->height = alt_font->height = max(main_font->height, alt_font->height);
+    /* To make the alignment uniform, find maximum height */
+    int maxh = font_list[0]->height;
+    for (int i = 1; font_list[i]; i++)
+        maxh = max(maxh, font_list[i]->height);
+
+    /* Set maximum height to all fonts */
+    for (int i = 0; font_list[i]; i++)
+        font_list[i]->height = maxh;
 
     /* Generate a list of screens */
     const xcb_query_extension_reply_t *qe_reply;
@@ -843,7 +884,7 @@ init (void)
 
         /* Adjust the height */
         if (bh < 0 || bh > scr->height_in_pixels)
-            bh = main_font->height + bu + 2;
+            bh = maxh + bu + 2;
 
         /* Check the geometry */
         if (bx + bw > scr->width_in_pixels || by + bh > scr->height_in_pixels) {
@@ -883,14 +924,10 @@ init (void)
 void
 cleanup (void)
 {
-    if (main_font) {
-        xcb_close_font(c, main_font->ptr);
-        free(main_font);
-    }
-
-    if (alt_font) {
-        xcb_close_font(c, alt_font->ptr);
-        free(alt_font);
+    for (int i = 0; font_list[i]; i++) {
+        xcb_close_font(c, font_list[i]->ptr);
+        free(font_list[i]);
+        font_list[i] = NULL;
     }
 
     while (monhead) {
@@ -980,13 +1017,16 @@ parse_font_list (char *str)
         return;
 
     tok = strtok(str, ",");
-    if (tok)
-        mfont = tok;
-    tok = strtok(NULL, ",");
-    if (tok)
-        afont = tok;
 
-    return;
+    for (int i = 0; tok; i++) {
+        if (i >= MAX_FONT_COUNT) {
+            fprintf(stderr, "Too many fonts; maximum %i\n", MAX_FONT_COUNT);
+            return;
+        }
+
+        font_names[i] = tok;
+        tok = strtok(NULL, ",");
+    }
 }
 
 int
