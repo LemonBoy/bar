@@ -11,6 +11,8 @@
 #include <xcb/xcb.h>
 #include <xcb/xinerama.h>
 #include <xcb/randr.h>
+#include <cairo/cairo.h>
+#include <cairo/cairo-xcb.h>
 
 // Here be dragons
 
@@ -18,18 +20,11 @@
 #define min(a,b) ((a) < (b) ? (a) : (b))
 #define indexof(c,s) (strchr((s),(c))-(s))
 
-typedef struct font_t {
-    xcb_font_t ptr;
-    int descent, height;
-    uint16_t char_max;
-    uint16_t char_min;
-    xcb_charinfo_t *width_lut;
-} font_t;
-
 typedef struct monitor_t {
     int x, width;
     xcb_window_t window;
-    xcb_pixmap_t pixmap;
+    cairo_surface_t *surface; 
+    cairo_t *cr;
     struct monitor_t *prev, *next;
 } monitor_t;
 
@@ -45,6 +40,10 @@ typedef struct area_stack_t {
     int pos;
     area_t slot[N];
 } area_stack_t;
+
+typedef struct color_t {
+    double r, g, b, a;
+} color_t;
 
 enum {
     ATTR_OVERL = (1<<0),
@@ -66,73 +65,87 @@ enum {
 
 static xcb_connection_t *c;
 static xcb_screen_t *scr;
-static xcb_gcontext_t gc[GC_MAX];
-static xcb_visualid_t visual;
+static xcb_visualtype_t *vt;
 static xcb_colormap_t colormap;
 static monitor_t *monhead, *montail;
-static font_t *main_font, *alt_font;
 static uint32_t attrs = 0;
 static bool dock = false;
 static bool topbar = true;
 static int bw = -1, bh = -1, bx = 0, by = 0;
 static int bu = 1; /* Underline height */
-static char *mfont, *afont;
-static uint32_t fgc, bgc, ugc;
-static uint32_t dfgc, dbgc;
+static char *mfont = NULL;
+static uint32_t fgc, bgc; 
 static area_stack_t astack;
 
+enum {
+    PAL_BG,
+    PAL_FG,
+    PAL_ATTR,
+    PAL_MAX,
+};
+
+static color_t palette[PAL_MAX];
+
 void
-update_gc (void)
+cairo_set_color (cairo_t *cr, const int i)
 {
-    xcb_change_gc(c, gc[GC_DRAW], XCB_GC_BACKGROUND | XCB_GC_FOREGROUND, (const uint32_t []){ fgc, bgc });
-    xcb_change_gc(c, gc[GC_CLEAR], XCB_GC_FOREGROUND, (const uint32_t []){ bgc });
-    xcb_change_gc(c, gc[GC_ATTR], XCB_GC_FOREGROUND, (const uint32_t []){ ugc });
+    cairo_set_source_rgba(cr, palette[i].r, palette[i].g, palette[i].b, palette[i].a);
 }
 
 void
-fill_rect (xcb_drawable_t d, xcb_gcontext_t gc, int x, int y, int width, int height)
+fill_rect (cairo_t *cr, const int i, int x, int y, int width, int height)
 {
-    xcb_poly_fill_rectangle(c, d, gc, 1, (const xcb_rectangle_t []){ { x, y, width, height } });
+    cairo_set_color(cr, i);
+    cairo_rectangle(cr, x, y, width, height);
+    cairo_stroke_preserve(cr);
+    cairo_fill(cr);
+}
+
+void
+cairo_copy (cairo_t *cr, cairo_surface_t *s, int sx, int sy, int dx, int dy, int w, int h)
+{
+    cairo_set_source_surface(cr, s, dx - sx, dy - sy);
+    cairo_rectangle (cr, dx, dy, w, h);
+    cairo_fill (cr);
 }
 
 int
-draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
+draw_char (monitor_t *mon, int x, int align, char *ch)
 {
-    /* In the unlikely case that the font doesn't have the glyph wanted just do nothing */
-    if (ch < cur_font->char_min || ch > cur_font->char_max)
-        return 0;
+    cairo_font_extents_t ext;
+    cairo_text_extents_t te;
+    cairo_font_extents(mon->cr, &ext);
+    cairo_text_extents(mon->cr, ch, &te);
 
-    int ch_width = cur_font->width_lut[ch - cur_font->char_min].character_width;
+    int ch_width = (int)te.x_advance + 1;
+    /*printf("%f %i %i\n", te.x_advance, (int)te.x_advance, ch_width);*/
 
     switch (align) {
         case ALIGN_C:
-            xcb_copy_area(c, mon->pixmap, mon->pixmap, gc[GC_DRAW], mon->width / 2 - x / 2, 0,
-                    mon->width / 2 - (x + ch_width) / 2, 0, x, bh);
+            cairo_copy(mon->cr, mon->surface, mon->width / 2 - x / 2, 0, mon->width / 2 - (x + ch_width) / 2, 0, x, bh);
             x = mon->width / 2 - (x + ch_width) / 2 + x;
             break;
         case ALIGN_R:
-            xcb_copy_area(c, mon->pixmap, mon->pixmap, gc[GC_DRAW], mon->width - x, 0,
-                    mon->width - x - ch_width, 0, x, bh);
+            cairo_copy(mon->cr, mon->surface, mon->width - x, 0, mon->width - x - ch_width, 0, x, bh);
             x = mon->width - ch_width;
             break;
     }
 
     /* Draw the background first */
-    fill_rect(mon->pixmap, gc[GC_CLEAR], x, by, ch_width, bh);
-
-    /* xcb accepts string in UCS-2 BE, so swap */
-    ch = (ch >> 8) | (ch << 8);
+    fill_rect(mon->cr, PAL_BG, x, by, ch_width, bh);
 
     /* String baseline coordinates */
-    xcb_image_text_16(c, 1, mon->pixmap, gc[GC_DRAW], x, bh / 2 + cur_font->height / 2 - cur_font->descent, (xcb_char2b_t *)&ch);
+    cairo_move_to(mon->cr, x, bh / 2 + ext.height / 2 - ext.descent);
+    cairo_set_color(mon->cr, PAL_FG);
+    cairo_show_text(mon->cr, ch);
 
     /* We can render both at the same time */
     if (attrs & ATTR_OVERL)
-        fill_rect(mon->pixmap, gc[GC_ATTR], x, 0, ch_width, bu);
+        fill_rect(mon->cr, PAL_ATTR, x, 0, ch_width, bu);
     if (attrs & ATTR_UNDERL)
-        fill_rect(mon->pixmap, gc[GC_ATTR], x, bh - bu, ch_width, bu);
+        fill_rect(mon->cr, PAL_ATTR, x, bh - bu, ch_width, bu);
 
-    return ch_width;
+    return ch_width; 
 }
 
 uint32_t
@@ -159,14 +172,6 @@ parse_color (const char *str, char **end, const uint32_t def)
         /* Some error checking is definitely good */
         if (errno)
             tmp = def;
-        /* Xorg uses colors with premultiplied alpha.
-         * Don't do anything if we didn't acquire a rgba visual. */
-        if (visual != scr->root_visual) {
-            const uint8_t a = ((tmp>>24)&255);
-            const uint32_t t1 = (tmp&0xff00ff) * (0x100-a);
-            const uint32_t t2 = (tmp&0x00ff00) * (0x100-a);
-            tmp = (a<<24)|(t1&0xff00ff)|(t2&0x00ff00);
-        }
         return tmp;
     }
 
@@ -188,6 +193,15 @@ parse_color (const char *str, char **end, const uint32_t def)
     return ret;
 }
 
+void
+convert_color (const uint32_t col, color_t *out) 
+{
+    out->b = ((col >> 0)&0xff) / 255.0;
+    out->g = ((col >> 8)&0xff) / 255.0;
+    out->r = ((col >>16)&0xff) / 255.0;
+    /*out->a = ((col >>24)&0xff) / 255.0;*/
+    out->a = 1.0;
+}
 
 void
 set_attribute (const char modifier, const char attribute)
@@ -298,7 +312,6 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
 void
 parse (char *text)
 {
-    font_t *cur_font;
     monitor_t *cur_mon;
     int pos_x, align, button;
     char *p = text, *end;
@@ -310,8 +323,10 @@ parse (char *text)
 
     memset(&astack, 0, sizeof(area_stack_t));
 
-    for (monitor_t *m = monhead; m != NULL; m = m->next)
-        fill_rect(m->pixmap, gc[GC_CLEAR], 0, 0, m->width, bh);
+    for (monitor_t *m = monhead; m != NULL; m = m->next) {
+        cairo_set_operator(m->cr, CAIRO_OPERATOR_SOURCE);
+        fill_rect(m->cr, PAL_BG, 0, 0, m->width, bh);
+    }
 
     for (;;) {
         if (*p == '\0' || *p == '\n')
@@ -328,10 +343,9 @@ parse (char *text)
                     case '!': set_attribute('!', *p++); break;
 
                     case 'R':
-                              tmp = fgc;
-                              fgc = bgc;
-                              bgc = tmp;
-                              update_gc();
+                              /*tmp = fgc;*/
+                              /*fgc = bgc;*/
+                              /*bgc = tmp;*/
                               break;
 
                     case 'l': pos_x = 0; align = ALIGN_L; break;
@@ -346,9 +360,12 @@ parse (char *text)
                               area_add(p, end, &p, cur_mon, pos_x, align, button);
                               break;
 
-                    case 'B': bgc = parse_color(p, &p, dbgc); update_gc(); break;
-                    case 'F': fgc = parse_color(p, &p, dfgc); update_gc(); break;
-                    case 'U': ugc = parse_color(p, &p, dbgc); update_gc(); break;
+                    case 'B': convert_color(parse_color(p, &p, bgc), &palette[PAL_BG]); 
+                              break;
+                    case 'F': convert_color(parse_color(p, &p, fgc), &palette[PAL_FG]); 
+                              break;
+                    case 'U': convert_color(parse_color(p, &p, fgc), &palette[PAL_ATTR]); 
+                              break;
 
                     case 'S':
                               if (*p == '+' && cur_mon->next)
@@ -378,72 +395,30 @@ parse (char *text)
             }
             /* Eat the trailing } */
             p++;
-        } else { /* utf-8 -> ucs-2 */
-            uint8_t *utf = (uint8_t *)p;
-            uint16_t ucs;
+        } else {
+            const int utf8_size[] = {
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0xC0-0xCF
+                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0xD0-0xDF
+                3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // 0xE0-0xEF
+                4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, // 0xF0-0xFF
+            };
+            int size = ((uint8_t)p[0]&0x80) ? utf8_size[(uint8_t)p[0]^0x80] : 1;
+                    
+            char tmp[size];
+            for (int i = 0; i < size; i++)
+                tmp[i] = *p++;
+            tmp[size] = '\0';
 
-            if (utf[0] < 0x80) {
-                ucs = utf[0];
-                p  += 1;
-            }
-            else if ((utf[0] & 0xe0) == 0xc0) {
-                ucs = (utf[0] & 0x1f) << 6 | (utf[1] & 0x3f);
-                p += 2;
-            }
-            else if ((utf[0] & 0xf0) == 0xe0) {
-                ucs = (utf[0] & 0xf) << 12 | (utf[1] & 0x3f) << 6 | (utf[2] & 0x3f);
-                p += 3;
-            }
-            else { /* Handle ascii > 0x80 */
-                ucs = utf[0];
-                p += 1;
-            }
-
-            /* If the character is outside the main font charset use the alternate font */
-            cur_font = (ucs < main_font->char_min || ucs > main_font->char_max) ? alt_font : main_font;
-
-            xcb_change_gc(c, gc[GC_DRAW] , XCB_GC_FONT, (const uint32_t []){ cur_font->ptr });
-
-            int w = draw_char(cur_mon, cur_font, pos_x, align, ucs);
+            int w = draw_char(cur_mon, pos_x, align, tmp);
 
             pos_x += w;
             area_shift(cur_mon->window, align, w);
         }
     }
-}
-
-font_t *
-font_load (const char *str)
-{
-    xcb_query_font_cookie_t queryreq;
-    xcb_query_font_reply_t *font_info;
-    xcb_void_cookie_t cookie;
-    xcb_font_t font;
-
-    font = xcb_generate_id(c);
-
-    cookie = xcb_open_font_checked(c, font, strlen(str), str);
-    if (xcb_request_check (c, cookie)) {
-        fprintf(stderr, "Could not load font %s\n", str);
-        return NULL;
-    }
-
-    font_t *ret = calloc(1, sizeof(font_t));
-
-    if (!ret)
-        return NULL;
-
-    queryreq = xcb_query_font(c, font);
-    font_info = xcb_query_font_reply(c, queryreq, NULL);
-
-    ret->ptr = font;
-    ret->descent = font_info->font_descent;
-    ret->height = font_info->font_ascent + font_info->font_descent;
-    ret->char_max = font_info->max_byte1 << 8 | font_info->max_char_or_byte2;
-    ret->char_min = font_info->min_byte1 << 8 | font_info->min_char_or_byte2;
-    ret->width_lut = xcb_query_font_char_infos(font_info);
-
-    return ret;
 }
 
 enum {
@@ -528,15 +503,20 @@ monitor_new (int x, int y, int width, int height)
     int win_y = (topbar ? by : height - bh - by) + y;
     ret->window = xcb_generate_id(c);
 
-    int depth = (visual == scr->root_visual) ? XCB_COPY_FROM_PARENT : 32;
+    int depth = (vt->visual_id == scr->root_visual) ? XCB_COPY_FROM_PARENT : 32;
     xcb_create_window(c, depth, ret->window, scr->root,
             x, win_y, width, bh, 0,
-            XCB_WINDOW_CLASS_INPUT_OUTPUT, visual,
+            XCB_WINDOW_CLASS_INPUT_OUTPUT, vt->visual_id,
             XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP,
-            (const uint32_t []){ bgc, bgc, dock, XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_BUTTON_PRESS, colormap });
+            (const uint32_t []){ scr->black_pixel, scr->black_pixel, dock, XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_BUTTON_PRESS, colormap });
 
-    ret->pixmap = xcb_generate_id(c);
-    xcb_create_pixmap(c, depth, ret->pixmap, ret->window, width, bh);
+    ret->surface = cairo_xcb_surface_create(c, ret->window, vt, width, height);
+    if (!cairo_surface_status != CAIRO_STATUS_SUCCESS) {
+        fprintf(stderr, "awwwwww\n");
+    }
+    ret->cr = cairo_create(ret->surface);
+
+    cairo_select_font_face (ret->cr, mfont? mfont: "fixed", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
 
     return ret;
 }
@@ -594,7 +574,7 @@ monitor_create_chain (xcb_rectangle_t *rects, const int num)
         bw = width - bx;
 
     if (bh < 0 || bh > height)
-        bh = main_font->height + bu + 2;
+        bh = 18;
 
     /* Check the geometry */
     if (bx + bw > width || by + bh > height) {
@@ -716,11 +696,11 @@ get_randr_monitors (void)
         return;
     }
 
-	xcb_rectangle_t r[valid];
+    xcb_rectangle_t r[valid];
 
-	for (i = j = 0; i < num && j < valid; i++)
-		if (rects[i].width != 0)
-			r[j++] = rects[i];
+    for (i = j = 0; i < num && j < valid; i++)
+        if (rects[i].width != 0)
+            r[j++] = rects[i];
 
     monitor_create_chain(r, valid);
 }
@@ -754,8 +734,8 @@ get_xinerama_monitors (void)
     monitor_create_chain(rects, screens);
 }
 
-xcb_visualid_t
-get_visual (void)
+xcb_visualtype_t *
+get_visual_type (void)
 {
     xcb_depth_iterator_t iter;
 
@@ -766,13 +746,24 @@ get_visual (void)
         xcb_visualtype_t *vis = xcb_depth_visuals(iter.data);
 
         if (iter.data->depth == 32)
-            return vis->visual_id;
+            return vis;
+
+        xcb_depth_next(&iter);
+    }
+    iter = xcb_screen_allowed_depths_iterator(scr);
+
+    /* Try to find a RGBA visual */
+    while (iter.rem) {
+        xcb_visualtype_t *vis = xcb_depth_visuals(iter.data);
+
+        if (iter.data->depth == 24)
+            return vis;
 
         xcb_depth_next(&iter);
     }
 
     /* Fallback to the default one */
-    return scr->root_visual;
+    return NULL;
 }
 
 void
@@ -789,26 +780,17 @@ xconn (void)
     scr = xcb_setup_roots_iterator(xcb_get_setup(c)).data;
 
     /* Try to get a RGBA visual and build the colormap for that */
-    visual = get_visual();
+    vt = get_visual_type();
 
     colormap = xcb_generate_id(c);
-    xcb_create_colormap(c, XCB_COLORMAP_ALLOC_NONE, colormap, scr->root, visual);
+    xcb_create_colormap(c, XCB_COLORMAP_ALLOC_NONE, colormap, scr->root, vt->visual_id);
 }
 
 void
 init (void)
 {
-    /* Load the fonts */
-    main_font = font_load(mfont ? mfont : "fixed");
-    if (!main_font)
-        exit(EXIT_FAILURE);
-
-    alt_font = font_load(afont ? afont : "fixed");
-    if (!alt_font)
-        exit(EXIT_FAILURE);
-
     /* To make the alignment uniform */
-    main_font->height = alt_font->height = max(main_font->height, alt_font->height);
+    /*main_font->height = alt_font->height = max(main_font->height, alt_font->height);*/
 
     /* Generate a list of screens */
     const xcb_query_extension_reply_t *qe_reply;
@@ -843,7 +825,7 @@ init (void)
 
         /* Adjust the height */
         if (bh < 0 || bh > scr->height_in_pixels)
-            bh = main_font->height + bu + 2;
+            bh = 18;
 
         /* Check the geometry */
         if (bx + bw > scr->width_in_pixels || by + bh > scr->height_in_pixels) {
@@ -861,19 +843,9 @@ init (void)
     /* For WM that support EWMH atoms */
     set_ewmh_atoms();
 
-    /* Create the gc for drawing */
-    gc[GC_DRAW] = xcb_generate_id(c);
-    xcb_create_gc(c, gc[GC_DRAW], monhead->pixmap, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND, (const uint32_t []){ fgc, bgc });
-
-    gc[GC_CLEAR] = xcb_generate_id(c);
-    xcb_create_gc(c, gc[GC_CLEAR], monhead->pixmap, XCB_GC_FOREGROUND, (const uint32_t []){ bgc });
-
-    gc[GC_ATTR] = xcb_generate_id(c);
-    xcb_create_gc(c, gc[GC_ATTR], monhead->pixmap, XCB_GC_FOREGROUND, (const uint32_t []){ ugc });
-
     /* Make the bar visible and clear the pixmap */
     for (monitor_t *mon = monhead; mon; mon = mon->next) {
-        fill_rect(mon->pixmap, gc[GC_CLEAR], 0, 0, mon->width, bh);
+        fill_rect(mon->cr, PAL_BG, 0, 0, mon->width, bh);
         xcb_map_window(c, mon->window);
     }
 
@@ -883,32 +855,17 @@ init (void)
 void
 cleanup (void)
 {
-    if (main_font) {
-        xcb_close_font(c, main_font->ptr);
-        free(main_font);
-    }
-
-    if (alt_font) {
-        xcb_close_font(c, alt_font->ptr);
-        free(alt_font);
-    }
-
     while (monhead) {
         monitor_t *next = monhead->next;
+        cairo_destroy(monhead->cr);
+        cairo_surface_destroy(monhead->surface);
         xcb_destroy_window(c, monhead->window);
-        xcb_free_pixmap(c, monhead->pixmap);
         free(monhead);
         monhead = next;
     }
 
     xcb_free_colormap(c, colormap);
 
-    if (gc[GC_DRAW])
-        xcb_free_gc(c, gc[GC_DRAW]);
-    if (gc[GC_CLEAR])
-        xcb_free_gc(c, gc[GC_CLEAR]);
-    if (gc[GC_ATTR])
-        xcb_free_gc(c, gc[GC_ATTR]);
     if (c)
         xcb_disconnect(c);
 }
@@ -982,9 +939,6 @@ parse_font_list (char *str)
     tok = strtok(str, ",");
     if (tok)
         mfont = tok;
-    tok = strtok(NULL, ",");
-    if (tok)
-        afont = tok;
 
     return;
 }
@@ -1011,11 +965,8 @@ main (int argc, char **argv)
     /* Connect to the Xserver and initialize scr */
     xconn();
 
-    /* B/W combo */
-    dbgc = bgc = parse_color("black", NULL, scr->black_pixel);
-    dfgc = fgc = parse_color("white", NULL, scr->white_pixel);
-
-    ugc = fgc;
+    bgc = scr->black_pixel;
+    fgc = scr->white_pixel;
 
     char ch;
     while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:")) != -1) {
@@ -1038,10 +989,14 @@ main (int argc, char **argv)
             case 'd': dock = true; break;
             case 'f': parse_font_list(optarg); break;
             case 'u': bu = strtoul(optarg, NULL, 10); break;
-            case 'B': dbgc = bgc = parse_color(optarg, NULL, scr->black_pixel); break;
-            case 'F': dfgc = fgc = parse_color(optarg, NULL, scr->white_pixel); break;
+            case 'B': bgc = parse_color(optarg, NULL, scr->black_pixel); break;
+            case 'F': fgc = parse_color(optarg, NULL, scr->white_pixel); break;
         }
     }
+
+    convert_color(bgc, &palette[PAL_BG]);
+    convert_color(fgc, &palette[PAL_FG]);
+    convert_color(fgc, &palette[PAL_ATTR]);
 
     /* Copy the geometry values in place */
     bw = geom_v[0];
@@ -1098,7 +1053,7 @@ main (int argc, char **argv)
 
         if (redraw) { /* Copy our temporary pixmap onto the window */
             for (monitor_t *mon = monhead; mon; mon = mon->next) {
-                xcb_copy_area(c, mon->pixmap, mon->window, gc[GC_DRAW], 0, 0, 0, 0, mon->width, bh);
+                cairo_surface_flush(mon->surface);
             }
         }
 
