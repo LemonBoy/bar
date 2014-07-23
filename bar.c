@@ -28,6 +28,7 @@ typedef struct font_t {
 
 typedef struct monitor_t {
     int x, width;
+    int y;
     xcb_window_t window;
     xcb_pixmap_t pixmap;
     struct monitor_t *prev, *next;
@@ -522,6 +523,7 @@ monitor_new (int x, int y, int width, int height)
     }
 
     ret->x = x;
+    ret->y = (topbar ? by : height - bh - by) + y;
     ret->width = width;
     ret->next = ret->prev = NULL;
 
@@ -530,7 +532,7 @@ monitor_new (int x, int y, int width, int height)
 
     int depth = (visual == scr->root_visual) ? XCB_COPY_FROM_PARENT : 32;
     xcb_create_window(c, depth, ret->window, scr->root,
-            x, win_y, width, bh, 0,
+            x, ret->y, width, bh, 0,
             XCB_WINDOW_CLASS_INPUT_OUTPUT, visual,
             XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP,
             (const uint32_t []){ bgc, bgc, dock, XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_BUTTON_PRESS, colormap });
@@ -875,6 +877,11 @@ init (void)
     for (monitor_t *mon = monhead; mon; mon = mon->next) {
         fill_rect(mon->pixmap, gc[GC_CLEAR], 0, 0, mon->width, bh);
         xcb_map_window(c, mon->window);
+
+        /* Make sure the WM puts the window in the right place, since some don't
+         * take (X,Y) coorinates into account when xcb_create_window is called */
+        const uint32_t coords[] = {mon->x,mon->y};
+        xcb_configure_window(c,mon->window,XCB_CONFIG_WINDOW_X|XCB_CONFIG_WINDOW_Y,coords);
     }
 
     xcb_flush(c);
