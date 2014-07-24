@@ -1020,29 +1020,29 @@ parse_font_list (char *str)
     if (!str)
         return;
 
-    tok = strtok(str, ",");
-    if (tok) {
-        mfont = tok; // font face
+    mfont = str; // font face
 
-        // if a colon is found
-        tok = strtok(mfont, ":");
+    // check for a colon
+    tok = strtok(mfont, ":");
+    // if there's a string before the colon
+    if(tok) {
+        // treat the string before the colon as the font face
+        mfont = tok;
+
+        // check for characters after the colon
+        tok = strtok(NULL, ":");
+        // if they exist
         if(tok) {
-            // treat the string before the colon as the font face
-            mfont = tok; // font face
-
-            // if characters exist after the colon
-            tok = strtok(NULL, ":");
-            if(tok) {
-                double candidate_size;
-                candidate_size = atof(tok);
-                // and the size is non-zero
-                if(candidate_size != 0) {
-                    // treat the rest of the string as the font size
-                    mfont_size = candidate_size; // font size
-                }
+            double candidate_size;
+            // convert them to a double
+            candidate_size = atof(tok);
+            // if the size is non-zero
+            if(candidate_size != 0) {
+                // use as the new font size
+                mfont_size = candidate_size;
             }
         }
-	}
+    }
 
     return;
 }
