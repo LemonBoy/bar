@@ -74,6 +74,7 @@ static monitor_t *monhead, *montail;
 static font_t *main_font, *alt_font;
 static uint32_t attrs = 0;
 static bool dock = false;
+static bool fix_position = false;
 static bool topbar = true;
 static int bw = -1, bh = -1, bx = 0, by = 0;
 static int bu = 1; /* Underline height */
@@ -880,8 +881,11 @@ init (void)
 
         /* Make sure the WM puts the window in the right place, since some don't
          * take (X,Y) coorinates into account when xcb_create_window is called */
-        const uint32_t coords[] = {mon->x,mon->y};
-        xcb_configure_window(c,mon->window,XCB_CONFIG_WINDOW_X|XCB_CONFIG_WINDOW_Y,coords);
+        if (fix_position)
+        {
+            const uint32_t coords[] = {mon->x,mon->y};
+            xcb_configure_window(c,mon->window,XCB_CONFIG_WINDOW_X|XCB_CONFIG_WINDOW_Y,coords);
+        }
     }
 
     xcb_flush(c);
@@ -1025,7 +1029,7 @@ main (int argc, char **argv)
     ugc = fgc;
 
     char ch;
-    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:")) != -1) {
+    while ((ch = getopt(argc, argv, "hg:bdcf:a:pu:B:F:")) != -1) {
         switch (ch) {
             case 'h':
                 printf ("usage: %s [-h | -g | -b | -d | -f | -a | -p | -u | -B | -F]\n"
@@ -1033,6 +1037,7 @@ main (int argc, char **argv)
                         "\t-g Set the bar geometry {width}x{height}+{xoffset}+{yoffset}\n"
                         "\t-b Put bar at the bottom of the screen\n"
                         "\t-d Force docking (use this if your WM isn't EWMH compliant)\n"
+                        "\t-c Coordinate fix (use if your WM doesn't position the bar correctly)\n"
                         "\t-f Bar font list, comma separated\n"
                         "\t-p Don't close after the data ends\n"
                         "\t-u Set the underline/overline height in pixels\n"
@@ -1043,6 +1048,7 @@ main (int argc, char **argv)
             case 'p': permanent = true; break;
             case 'b': topbar = false; break;
             case 'd': dock = true; break;
+            case 'c': fix_position = true; break;
             case 'f': parse_font_list(optarg); break;
             case 'u': bu = strtoul(optarg, NULL, 10); break;
             case 'B': dbgc = bgc = parse_color(optarg, NULL, scr->black_pixel); break;

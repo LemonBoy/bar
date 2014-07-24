@@ -32,6 +32,10 @@ Dock the bar at the bottom of the screen.
 
 Force docking without asking the window manager. This is needed if the window manager isn't EWMH compliant.
 
+=item B<-c>
+
+Fix the bar being positioned incorrectly by the window manager. This is only necessary for some window managers. It may break a multi-monitor setup.
+
 =item B<-f> I<font>
 
 Comma separated list of fonts, bar supports a maximum of two fonts.
