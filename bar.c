@@ -661,10 +661,8 @@ get_randr_monitors (void)
             return;
         }
 
-        if (ci_reply->rotation & (XCB_RANDR_ROTATION_ROTATE_90|XCB_RANDR_ROTATION_ROTATE_270))
-            rects[i] = (xcb_rectangle_t){ ci_reply->x, ci_reply->y, ci_reply->height, ci_reply->width };
-        else
-            rects[i] = (xcb_rectangle_t){ ci_reply->x, ci_reply->y, ci_reply->width, ci_reply->height };
+        /* There's no need to handle rotated screens here (see #69) */
+        rects[i] = (xcb_rectangle_t){ ci_reply->x, ci_reply->y, ci_reply->width, ci_reply->height };
 
         free(ci_reply);
 
