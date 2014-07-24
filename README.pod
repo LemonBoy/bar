@@ -34,7 +34,7 @@ Force docking without asking the window manager. This is needed if the window ma
 
 =item B<-f> I<font>
 
-Comma separated list of fonts, bar supports a maximum of two fonts.
+Font face. Size can be specified as <font>:<size>
 
 =item B<-p>
 

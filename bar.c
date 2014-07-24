@@ -74,6 +74,7 @@ static bool topbar = true;
 static int bw = -1, bh = -1, bx = 0, by = 0;
 static int bu = 1; /* Underline height */
 static char *mfont = NULL;
+static double mfont_size = 10.0;
 static uint32_t fgc, bgc; 
 static area_stack_t astack;
 
@@ -517,6 +518,7 @@ monitor_new (int x, int y, int width, int height)
     ret->cr = cairo_create(ret->surface);
 
     cairo_select_font_face (ret->cr, mfont? mfont: "fixed", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+	cairo_set_font_size(ret->cr, mfont_size);
 
     return ret;
 }
@@ -937,8 +939,28 @@ parse_font_list (char *str)
         return;
 
     tok = strtok(str, ",");
-    if (tok)
-        mfont = tok;
+    if (tok) {
+		mfont = tok; // font face
+
+		// if a colon is found
+		tok = strtok(mfont, ":");
+		if(tok) {
+			// treat the string before the colon as the font face
+			mfont = tok; // font face
+
+			// if characters exist after the colon
+			tok = strtok(NULL, ":");
+			if(tok) {
+				double candidate_size;
+				candidate_size = atof(tok);
+				// and the size is non-zero
+				if(candidate_size != 0) {
+					// treat the rest of the string as the font size
+					mfont_size = candidate_size; // font size
+				}
+			}
+		}
+	}
 
     return;
 }
