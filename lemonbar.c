@@ -1239,6 +1239,7 @@ main (int argc, char **argv)
     xcb_button_press_event_t *press_ev;
     char input[4096] = {0, };
     bool permanent = false;
+    bool enterleave = false;
     int geom_v[4] = { -1, -1, 0, 0 };
     int ch;
 
@@ -1256,7 +1257,7 @@ main (int argc, char **argv)
 
     ugc = fgc;
 
-    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:")) != -1) {
+    while ((ch = getopt(argc, argv, "hg:bdef:a:pu:B:F:")) != -1) {
         switch (ch) {
             case 'h':
                 printf ("lemonbar version %s\n", VERSION);
@@ -1265,6 +1266,7 @@ main (int argc, char **argv)
                         "\t-g Set the bar geometry {width}x{height}+{xoffset}+{yoffset}\n"
                         "\t-b Put the bar at the bottom of the screen\n"
                         "\t-d Force docking (use this if your WM isn't EWMH compliant)\n"
+                        "\t-e Output enter and leave window events\n"
                         "\t-f Bar font list, comma separated\n"
                         "\t-p Don't close after the data ends\n"
                         "\t-u Set the underline/overline height in pixels\n"
@@ -1275,6 +1277,7 @@ main (int argc, char **argv)
             case 'p': permanent = true; break;
             case 'b': topbar = false; break;
             case 'd': dock = true; break;
+            case 'e': enterleave = true; break;
             case 'f': parse_font_list(optarg); break;
             case 'u': bu = strtoul(optarg, NULL, 10); break;
             case 'B': dbgc = bgc = parse_color(optarg, NULL, (rgba_t)scr->black_pixel); break;
@@ -1336,7 +1339,8 @@ main (int argc, char **argv)
                         case XCB_LEAVE_NOTIFY:
                             {
                                 bool entered = ev->response_type == XCB_ENTER_NOTIFY;
-                                write(STDOUT_FILENO, entered ? "enter\n" : "leave\n", 7);
+                                if (enterleave)
+                                    write(STDOUT_FILENO, entered ? "enter\n" : "leave\n", 7);
                             }
                             break;
                     }
