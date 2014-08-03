@@ -1340,7 +1340,7 @@ main (int argc, char **argv)
                             {
                                 bool entered = ev->response_type == XCB_ENTER_NOTIFY;
                                 if (enterleave)
-                                    write(STDOUT_FILENO, entered ? "enter\n" : "leave\n", 7);
+                                    write(STDOUT_FILENO, entered ? "enter\n" : "leave\n", 6);
                             }
                             break;
                     }
