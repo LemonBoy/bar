@@ -726,11 +726,16 @@ monitor_new (int x, int y, int width, int height)
     ret->window = xcb_generate_id(c);
 
     int depth = (visual == scr->root_visual) ? XCB_COPY_FROM_PARENT : 32;
+    uint32_t events =
+        XCB_EVENT_MASK_EXPOSURE     |
+        XCB_EVENT_MASK_BUTTON_PRESS |
+        XCB_EVENT_MASK_ENTER_WINDOW |
+        XCB_EVENT_MASK_LEAVE_WINDOW ;
     xcb_create_window(c, depth, ret->window, scr->root,
             ret->x, ret->y, width, bh, 0,
             XCB_WINDOW_CLASS_INPUT_OUTPUT, visual,
             XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP,
-            (const uint32_t []){ bgc.v, bgc.v, dock, XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_BUTTON_PRESS, colormap });
+            (const uint32_t []){ bgc.v, bgc.v, dock, events, colormap });
 
     ret->pixmap = xcb_generate_id(c);
     xcb_create_pixmap(c, depth, ret->pixmap, ret->window, width, bh);
@@ -1325,6 +1330,13 @@ main (int argc, char **argv)
                                     write(STDOUT_FILENO, area->cmd, strlen(area->cmd));
                                     write(STDOUT_FILENO, "\n", 1);
                                 }
+                            }
+                            break;
+                        case XCB_ENTER_NOTIFY:
+                        case XCB_LEAVE_NOTIFY:
+                            {
+                                bool entered = ev->response_type == XCB_ENTER_NOTIFY;
+                                write(STDOUT_FILENO, entered ? "enter\n" : "leave\n", 7);
                             }
                             break;
                     }
