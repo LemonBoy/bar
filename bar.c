@@ -908,6 +908,9 @@ init (void)
     /* Initialiaze monitor list head and tail */
     monhead = montail = NULL;
 
+    /* Initialize area queue list head */
+    aqueuehead = NULL;
+
     /* Check if RandR is present */
     qe_reply = xcb_get_extension_data(c, &xcb_randr_id);
 
