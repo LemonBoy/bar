@@ -215,7 +215,7 @@ set_attribute (const char modifier, const char attribute)
 
 
 void
-area_get (xcb_window_t win, const int x, const int button)
+area_handle_click (xcb_window_t win, const int x, const int button)
 {
     for (int i = 0; i < astack.pos; i++)
         if (astack.slot[i].window == win && x > astack.slot[i].begin && x < astack.slot[i].end && button == astack.slot[i].button) {
@@ -1178,7 +1178,7 @@ main (int argc, char **argv)
                             press_ev = (xcb_button_press_event_t *)ev;
                             {
                                 /* Respond to the click */
-                                area_get(press_ev->event, press_ev->event_x, press_ev->detail);
+                                area_handle_click(press_ev->event, press_ev->event_x, press_ev->detail);
                             }
                             break;
                     }
