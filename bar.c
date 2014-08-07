@@ -46,6 +46,11 @@ typedef struct area_stack_t {
     area_t slot[N];
 } area_stack_t;
 
+typedef struct area_queue_t {
+    int pos;
+    struct area_queue_t *next;
+} area_queue_t;
+
 enum {
     ATTR_OVERL = (1<<0),
     ATTR_UNDERL = (1<<1),
@@ -85,6 +90,7 @@ static int bu = 1; /* Underline height */
 static uint32_t fgc, bgc, ugc;
 static uint32_t dfgc, dbgc;
 static area_stack_t astack;
+static area_queue_t *aqueuehead;
 
 void
 update_gc (void)
@@ -209,13 +215,53 @@ set_attribute (const char modifier, const char attribute)
 
 
 area_t *
-area_get (xcb_window_t win, const int x)
+area_get (xcb_window_t win, const int x, const int button)
 {
     for (int i = 0; i < astack.pos; i++)
-        if (astack.slot[i].window == win && x > astack.slot[i].begin && x < astack.slot[i].end)
+        if (astack.slot[i].window == win && x > astack.slot[i].begin && x < astack.slot[i].end && button == astack.slot[i].button)
             return &astack.slot[i];
+
     return NULL;
 }
+
+int
+area_queue_pop ()
+{
+    int pos = -1;
+    if(!aqueuehead)
+        return pos;
+
+    area_queue_t *a = aqueuehead->next;
+    pos = aqueuehead->pos;
+    free(aqueuehead);
+    aqueuehead = a;
+    return pos;    
+}
+
+void
+area_queue_free ()
+{
+    while (aqueuehead) {
+        area_queue_t *a = aqueuehead->next;
+        free(aqueuehead);
+        aqueuehead = a;
+    }
+}
+
+void
+area_queue_add (const int pos)
+{
+    area_queue_t *ret;
+    ret = calloc(1, sizeof(area_queue_t));
+    if (!ret) {
+        fprintf(stderr, "Failed to allocate new area queue\n");
+        exit(EXIT_FAILURE);
+    }
+    ret->next = aqueuehead;
+    ret->pos = pos;
+    aqueuehead = ret;
+}
+
 
 void
 area_shift (xcb_window_t win, const int align, int delta)
@@ -237,7 +283,6 @@ bool
 area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x, const int align, const int button)
 {
     char *p = str;
-    area_t *a = &astack.slot[astack.pos];
 
     if (astack.pos == N) {
         fprintf(stderr, "astack overflow!\n");
@@ -248,8 +293,14 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
     if (*p != ':') {
         *end = p;
 
+        const int pos = area_queue_pop();
+        if (pos == -1)
+            return false;
+
+        area_t *a = &astack.slot[pos];
+
         /* Basic safety checks */
-        if (!a->cmd || a->align != align || a->window != mon->window)
+        if (!a || !a->cmd || a->align != align || a->window != mon->window)
             return false;
 
         const int size = x - a->begin;
@@ -269,8 +320,6 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
                 break;
         }
 
-        astack.pos++;
-
         return true;
     }
 
@@ -284,6 +333,8 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
 
     *trail = '\0';
 
+    area_t *a = &astack.slot[astack.pos];
+
     /* This is a pointer to the string buffer allocated in the main */
     a->cmd = p;
     a->align = align;
@@ -292,7 +343,8 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
     a->button = button;
 
     *end = trail + 1;
-
+    area_queue_add(astack.pos);
+    astack.pos++;
     return true;
 }
 
@@ -335,6 +387,7 @@ parse (char *text)
     align = ALIGN_L;
     cur_mon = monhead;
 
+    area_queue_free();
     memset(&astack, 0, sizeof(area_stack_t));
 
     for (monitor_t *m = monhead; m != NULL; m = m->next)
@@ -742,11 +795,11 @@ get_randr_monitors (void)
         return;
     }
 
-	xcb_rectangle_t r[valid];
+    xcb_rectangle_t r[valid];
 
-	for (i = j = 0; i < num && j < valid; i++)
-		if (rects[i].width != 0)
-			r[j++] = rects[i];
+    for (i = j = 0; i < num && j < valid; i++)
+        if (rects[i].width != 0)
+            r[j++] = rects[i];
 
     monitor_create_chain(r, valid);
 }
@@ -922,6 +975,8 @@ init (void)
 void
 cleanup (void)
 {
+    area_queue_free();
+
     for (int i = 0; font_list[i]; i++) {
         xcb_close_font(c, font_list[i]->ptr);
         free(font_list[i]);
@@ -1119,9 +1174,9 @@ main (int argc, char **argv)
                         case XCB_BUTTON_PRESS:
                             press_ev = (xcb_button_press_event_t *)ev;
                             {
-                                area_t *area = area_get(press_ev->event, press_ev->event_x);
+                                area_t *area = area_get(press_ev->event, press_ev->event_x, press_ev->detail);
                                 /* Respond to the click */
-                                if (area && area->button == press_ev->detail) {
+                                if (area) {
                                     write(STDOUT_FILENO, area->cmd, strlen(area->cmd)); 
                                     write(STDOUT_FILENO, "\n", 1); 
                                 }
