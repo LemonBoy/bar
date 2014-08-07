@@ -214,14 +214,14 @@ set_attribute (const char modifier, const char attribute)
 }
 
 
-area_t *
+void
 area_get (xcb_window_t win, const int x, const int button)
 {
     for (int i = 0; i < astack.pos; i++)
-        if (astack.slot[i].window == win && x > astack.slot[i].begin && x < astack.slot[i].end && button == astack.slot[i].button)
-            return &astack.slot[i];
-
-    return NULL;
+        if (astack.slot[i].window == win && x > astack.slot[i].begin && x < astack.slot[i].end && button == astack.slot[i].button) {
+            write(STDOUT_FILENO, astack.slot[i].cmd, strlen(astack.slot[i].cmd)); 
+            write(STDOUT_FILENO, "\n", 1); 
+        }
 }
 
 int
@@ -1177,12 +1177,8 @@ main (int argc, char **argv)
                         case XCB_BUTTON_PRESS:
                             press_ev = (xcb_button_press_event_t *)ev;
                             {
-                                area_t *area = area_get(press_ev->event, press_ev->event_x, press_ev->detail);
                                 /* Respond to the click */
-                                if (area) {
-                                    write(STDOUT_FILENO, area->cmd, strlen(area->cmd)); 
-                                    write(STDOUT_FILENO, "\n", 1); 
-                                }
+                                area_get(press_ev->event, press_ev->event_x, press_ev->detail);
                             }
                             break;
                     }
