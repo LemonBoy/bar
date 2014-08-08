@@ -157,18 +157,30 @@ parse_color (const char *str, char **end, const uint32_t def)
     if (str[0] == '#') {
         errno = 0;
         uint32_t tmp = strtoul(str + 1, end, 16);
+
         /* Some error checking is definitely good */
         if (errno)
             tmp = def;
-        /* Xorg uses colors with premultiplied alpha.
-         * Don't do anything if we didn't acquire a rgba visual. */
-        if (visual != scr->root_visual) {
-            const uint8_t a = ((tmp>>24)&255);
-            const uint32_t t1 = (tmp&0xff00ff) * (0x100-a);
-            const uint32_t t2 = (tmp&0x00ff00) * (0x100-a);
-            tmp = (a<<24)|(t1&0xff00ff)|(t2&0x00ff00);
-        }
-        return tmp;
+
+        /* Xorg uses colors with premultiplied alpha */
+        unsigned int a = (tmp&0xff000000) >> 24;
+        unsigned int r = (tmp&0x00ff0000) >> 16;
+        unsigned int g = (tmp&0x0000ff00) >> 8;
+        unsigned int b = (tmp&0x000000ff);
+
+        if (a) {
+            r = (r * 255) / a;
+            g = (g * 255) / a;
+            b = (b * 255) / a;
+
+            /* Clamp on overflow */
+            if (r > 255) r = 255;
+            if (g > 255) g = 255;
+            if (b > 255) b = 255;
+        } else
+            r = g = b = 0;
+
+        return a << 24 | r << 16 | g << 8 | b;
     }
 
     /* Actual color name, resolve it */
