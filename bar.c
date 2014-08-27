@@ -224,7 +224,7 @@ area_t *
 area_get (xcb_window_t win, const int x)
 {
     for (int i = 0; i < astack.pos; i++)
-        if (astack.slot[i].window == win && x > astack.slot[i].begin && x < astack.slot[i].end)
+        if (astack.slot[i].window == win && x >= astack.slot[i].begin && x < astack.slot[i].end)
             return &astack.slot[i];
     return NULL;
 }
