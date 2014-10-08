@@ -977,6 +977,8 @@ xconn (void)
         exit (EXIT_FAILURE);
     }
 
+	XSetEventQueueOwner(dpy, XCBOwnsEventQueue);
+
     /* Grab infos from the first screen */
     scr = xcb_setup_roots_iterator(xcb_get_setup(c)).data;
 
