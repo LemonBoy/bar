@@ -733,10 +733,10 @@ monitor_new (int x, int y, int width, int height)
 
     xcb_create_window(c, XCB_COPY_FROM_PARENT, ret->window, scr->root,
                       x, win_y, width, bh, 0,
-                      XCB_WINDOW_CLASS_INPUT_OUTPUT, scr->root_visual,
-                      XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK ,
+                      XCB_WINDOW_CLASS_INPUT_OUTPUT, visual,
+                      XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP,
     (const uint32_t []) {
-        bgc, XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_BUTTON_PRESS
+        bgc, bgc, dock, XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_BUTTON_PRESS, colormap
     });
 
     ret->pixmap = xcb_generate_id(c);
