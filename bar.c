@@ -77,9 +77,13 @@ enum {
 
 static Display *dpy;
 static xcb_connection_t *c;
+
 static xcb_screen_t *scr;
+static int scr_nbr = 0;
+
 static xcb_gcontext_t gc[GC_MAX];
 static xcb_visualid_t visual;
+static struct Visual *visual_ptr;
 static xcb_colormap_t colormap;
 
 
@@ -117,11 +121,11 @@ update_gc (void)
         ugc
     });
 
-    XftColorFree(dpy, DefaultVisual(dpy, DefaultScreen(dpy)), DefaultColormap(dpy, DefaultScreen(dpy)), &sel_fg);
+    XftColorFree(dpy, visual_ptr, colormap , &sel_fg);
     char color[8] = "#ffffff";
     snprintf(color, sizeof(color), "#%06X", fgc);
 
-    if (!XftColorAllocName (dpy, DefaultVisual(dpy, DefaultScreen(dpy)), DefaultColormap(dpy, DefaultScreen(dpy)), color, &sel_fg)) {
+    if (!XftColorAllocName (dpy, visual_ptr, colormap, color, &sel_fg)) {
         fprintf(stderr, "Couldn't allocate xft font color '%s'\n", color);
     }
 }
@@ -478,9 +482,8 @@ parse (char *text)
         fill_rect(m->pixmap, gc[GC_CLEAR], 0, 0, m->width, bh);
 
     /* Create xft drawable */
-    int s = DefaultScreen (dpy);
-    if (!(xft_draw = XftDrawCreate (dpy, cur_mon->pixmap, DefaultVisual(dpy, s), DefaultColormap(dpy, s)))) {
-        //if (!(xft_draw = XftDrawCreate (dpy, cur_mon->pixmap, visual_ptr, colormap))) {
+    int s = scr_nbr;
+    if (!(xft_draw = XftDrawCreate (dpy, cur_mon->pixmap, visual_ptr , colormap ))) {
         fprintf(stderr, "Couldn't create xft drawable\n");
     }
 
@@ -633,7 +636,7 @@ font_load (const char *str)
         ret->char_max = font_info->max_byte1 << 8 | font_info->max_char_or_byte2;
         ret->char_min = font_info->min_byte1 << 8 | font_info->min_char_or_byte2;
         ret->width_lut = xcb_query_font_char_infos(font_info);
-    } else if (ret->xft_ft = XftFontOpenName (dpy, DefaultScreen(dpy), str)) {
+    } else if (ret->xft_ft = XftFontOpenName (dpy, scr_nbr, str)) {
         ret->ascent = ret->xft_ft->ascent;
         ret->descent = ret->xft_ft->descent;
         ret->height = ret->ascent + ret->descent;
@@ -961,8 +964,22 @@ xcb_visualid_t
 get_visual (void)
 {
 
-    visual = scr->root_visual;
-    return visual;
+	xcb_depth_iterator_t depth_iter;
+
+	depth_iter = xcb_screen_allowed_depths_iterator (scr);
+	for (; depth_iter.rem; xcb_depth_next (&depth_iter)) {
+		xcb_visualtype_iterator_t visual_iter;
+
+		visual_iter = xcb_depth_visuals_iterator (depth_iter.data);
+		for (; visual_iter.rem; xcb_visualtype_next (&visual_iter)) {
+			if (scr->root_visual == visual_iter.data->visual_id) {
+				visual_ptr = visual_iter.data;
+				break;
+			}
+		}
+	}   
+	visual_ptr = DefaultVisual(dpy, scr_nbr);	
+	return scr->root_visual; //scr->root_visual;
     /*
        xcb_depth_iterator_t iter;
 
@@ -981,7 +998,6 @@ get_visual (void)
     	}
     	*/
     /* Fallback to the default one */
-    return scr->root_visual;
 }
 
 void
@@ -999,11 +1015,9 @@ xconn (void)
     /* Grab infos from the first screen */
     scr = xcb_setup_roots_iterator(xcb_get_setup(c)).data;
 
-	colormap = scr->default_colormap;
     /* Try to get a RGBA visual and build the colormap for that */
-    //	visual = get_visual();
-    //	colormap = xcb_generate_id(c);
-    //	xcb_create_colormap(c, XCB_COLORMAP_ALLOC_NONE, colormap, scr->root, visual);
+	visual = get_visual();
+	colormap = DefaultColormap(dpy, scr_nbr); 
 
 }
 
@@ -1041,25 +1055,25 @@ init (void)
     /* Initialiaze monitor list head and tail */
     monhead = montail = NULL;
 
-    //	/* Check if RandR is present */
-    //qe_reply = xcb_get_extension_data(c, &xcb_randr_id);
+    /* Check if RandR is present */
+    qe_reply = xcb_get_extension_data(c, &xcb_randr_id);
 
-    //if (qe_reply && qe_reply->present) {
-    //get_randr_monitors();
-    //} else {
-    //qe_reply = xcb_get_extension_data(c, &xcb_xinerama_id);
-    //
-    ///* Check if Xinerama extension is present and active */
-    //if (qe_reply && qe_reply->present) {
-    //xcb_xinerama_is_active_reply_t *xia_reply;
-    //xia_reply = xcb_xinerama_is_active_reply(c, xcb_xinerama_is_active(c), NULL);
-    //
-    //if (xia_reply && xia_reply->state)
-    //get_xinerama_monitors();
-    //
-    //free(xia_reply);
-    //}
-    //}
+    if (qe_reply && qe_reply->present) {
+		get_randr_monitors();
+    } else {
+		qe_reply = xcb_get_extension_data(c, &xcb_xinerama_id);
+    
+		/* Check if Xinerama extension is present and active */
+		if (qe_reply && qe_reply->present) {
+			xcb_xinerama_is_active_reply_t *xia_reply;
+			xia_reply = xcb_xinerama_is_active_reply(c, xcb_xinerama_is_active(c), NULL);
+    
+			if (xia_reply && xia_reply->state)
+				get_xinerama_monitors();
+    
+			free(xia_reply);
+		}
+	}
 
     if (!monhead) {
         /* If I fits I sits */
@@ -1111,7 +1125,7 @@ init (void)
     char color[8] = "#ffffff";
     snprintf(color, sizeof(color), "#%06X", fgc);
 
-    if (!XftColorAllocName (dpy, DefaultVisual(dpy, DefaultScreen(dpy)), DefaultColormap(dpy, DefaultScreen(dpy)), color, &sel_fg)) {
+    if (!XftColorAllocName (dpy, visual_ptr, colormap, color, &sel_fg)) {
         fprintf(stderr, "Couldn't allocate xft font color '%s'\n", color);
     }
     xcb_flush(c);
@@ -1139,8 +1153,7 @@ cleanup (void)
         monhead = next;
     }
 
-    XftColorFree(dpy, DefaultVisual(dpy, DefaultScreen(dpy)), DefaultColormap(dpy, DefaultScreen(dpy)), &sel_fg);
-    //xcb_free_colormap(c, colormap);
+    XftColorFree(dpy, visual_ptr, colormap, &sel_fg);
 
     if (gc[GC_DRAW])
         xcb_free_gc(c, gc[GC_DRAW]);
