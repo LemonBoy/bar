@@ -83,7 +83,7 @@ static int scr_nbr = 0;
 
 static xcb_gcontext_t gc[GC_MAX];
 static xcb_visualid_t visual;
-static struct Visual *visual_ptr;
+static Visual *visual_ptr;
 static xcb_colormap_t colormap;
 
 
@@ -482,7 +482,6 @@ parse (char *text)
         fill_rect(m->pixmap, gc[GC_CLEAR], 0, 0, m->width, bh);
 
     /* Create xft drawable */
-    int s = scr_nbr;
     if (!(xft_draw = XftDrawCreate (dpy, cur_mon->pixmap, visual_ptr , colormap ))) {
         fprintf(stderr, "Couldn't create xft drawable\n");
     }
@@ -636,7 +635,7 @@ font_load (const char *str)
         ret->char_max = font_info->max_byte1 << 8 | font_info->max_char_or_byte2;
         ret->char_min = font_info->min_byte1 << 8 | font_info->min_char_or_byte2;
         ret->width_lut = xcb_query_font_char_infos(font_info);
-    } else if (ret->xft_ft = XftFontOpenName (dpy, scr_nbr, str)) {
+    } else if ((ret->xft_ft = XftFontOpenName (dpy, scr_nbr, str))) {
         ret->ascent = ret->xft_ft->ascent;
         ret->descent = ret->xft_ft->descent;
         ret->height = ret->ascent + ret->descent;
@@ -732,7 +731,6 @@ monitor_new (int x, int y, int width, int height)
     int win_y = (topbar ? by : height - bh - by) + y;
     ret->window = xcb_generate_id(c);
 
-    int depth = (visual == scr->root_visual) ? XCB_COPY_FROM_PARENT : 32;
     xcb_create_window(c, XCB_COPY_FROM_PARENT, ret->window, scr->root,
                       x, win_y, width, bh, 0,
                       XCB_WINDOW_CLASS_INPUT_OUTPUT, scr->root_visual,
