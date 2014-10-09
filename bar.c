@@ -575,6 +575,10 @@ parse (char *text)
                         p++;
                         continue;
                     }
+					XftDrawDestroy (xft_draw);
+					if (!(xft_draw = XftDrawCreate (dpy, cur_mon->pixmap, visual_ptr , colormap ))) {
+						fprintf(stderr, "Couldn't create xft drawable\n");
+					}
 
                     p++;
                     pos_x = 0;
