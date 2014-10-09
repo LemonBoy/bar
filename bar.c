@@ -181,7 +181,6 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, wchar_t ch)
     } else {
         ch_width = cur_font->width_lut[ch - cur_font->char_min].character_width;
     }
-
     switch (align) {
     case ALIGN_C:
         xcb_copy_area(c, mon->pixmap, mon->pixmap, gc[GC_DRAW], mon->width / 2 - x / 2, 0,
@@ -196,7 +195,7 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, wchar_t ch)
     }
 
     /* Draw the background first */
-    fill_rect(mon->pixmap, gc[GC_CLEAR], x, by, ch_width, bh);
+    fill_rect(mon->pixmap, gc[GC_CLEAR], x, 0, ch_width, bh);
 
     int y = bh / 2 + cur_font->height / 2- cur_font->descent;
     if (cur_font->xft_ft) {
