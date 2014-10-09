@@ -104,6 +104,7 @@ static area_stack_t astack;
 static XftColor sel_fg;
 static XftDraw *xft_draw;
 
+//char width lookuptable
 #define MAX_WIDTHS (1 << 16)
 static wchar_t xft_char[MAX_WIDTHS];
 static char    xft_width[MAX_WIDTHS];
@@ -488,7 +489,7 @@ parse (char *text)
 
     for (;;) {
         if (*p == '\0' || *p == '\n')
-            return;
+			break;
 
         if (*p == '%' && p++ && *p == '{' && (end = strchr(p++, '}'))) {
             while (p < end) {
