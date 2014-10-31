@@ -362,7 +362,8 @@ parse (char *text)
         if (*p == '\0' || *p == '\n')
             return;
 
-        if (*p == '%' && p++ && *p == '{' && (end = strchr(p++, '}'))) {
+        if (*p == '%' && *(p+1) == '{' && (end = strchr(p+2, '}'))) {
+            p += 2;
             while (p < end) {
                 while (isspace(*p))
                     p++;
