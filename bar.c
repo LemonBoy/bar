@@ -1141,8 +1141,9 @@ main (int argc, char **argv)
                                 area_t *area = area_get(press_ev->event, press_ev->event_x);
                                 /* Respond to the click */
                                 if (area && area->button == press_ev->detail) {
-                                    write(STDOUT_FILENO, area->cmd, strlen(area->cmd)); 
-                                    write(STDOUT_FILENO, "\n", 1); 
+                                    ssize_t n;
+                                    n = write(STDOUT_FILENO, area->cmd, strlen(area->cmd)); 
+                                    n = write(STDOUT_FILENO, "\n", 1); 
                                 }
                             }
                             break;
