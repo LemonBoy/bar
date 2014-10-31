@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -168,19 +169,24 @@ parse_color (const char *str, char **end, const uint32_t def)
         unsigned int g = (tmp&0x0000ff00) >> 8;
         unsigned int b = (tmp&0x000000ff);
 
-        if (a) {
-            r = (r * 255) / a;
-            g = (g * 255) / a;
-            b = (b * 255) / a;
+        ptrdiff_t len = *end - str;
+        if (len == 8) {
+            if (a == 0) {
+                r = g = b = 0;
+            } else {
+                r = (r * 255) / a;
+                g = (g * 255) / a;
+                b = (b * 255) / a;
 
-            /* Clamp on overflow */
-            if (r > 255) r = 255;
-            if (g > 255) g = 255;
-            if (b > 255) b = 255;
-        } else
-            r = g = b = 0;
+                /* Clamp on overflow */
+                if (r > 255) r = 255;
+                if (g > 255) g = 255;
+                if (b > 255) b = 255;
+            }
+        }
 
-        return a << 24 | r << 16 | g << 8 | b;
+        uint32_t c = a << 24 | r << 16 | g << 8 | b;
+        return c;
     }
 
     /* Actual color name, resolve it */
