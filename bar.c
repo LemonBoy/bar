@@ -159,7 +159,7 @@ int xft_char_width (wchar_t ch, font_t *cur_font)
     int slot = xft_char_width_slot(ch);
     if (!xft_char[slot]) {
         XGlyphInfo gi;
-        FT_UInt glyph = XftCharIndex (dpy, cur_font->xft_ft, ch);
+        FT_UInt glyph = XftCharIndex (dpy, cur_font->xft_ft, (FcChar32) ch);
         XftFontLoadGlyphs (dpy, cur_font->xft_ft, FcFalse, &glyph, 1);
         XftGlyphExtents (dpy, cur_font->xft_ft, &glyph, 1, &gi);
         XftFontUnloadGlyphs (dpy, cur_font->xft_ft, &glyph, 1);
@@ -200,7 +200,7 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, wchar_t ch)
 
     int y = bh / 2 + cur_font->height / 2- cur_font->descent;
     if (cur_font->xft_ft) {
-        XftDrawString32 (xft_draw, &sel_fg, cur_font->xft_ft, x,y, &ch, 1);
+        XftDrawString32 (xft_draw, &sel_fg, cur_font->xft_ft, x,y,(const FcChar32*) &ch, 1);
     } else {
         char c_ = ch > 127 ? ' ' : ch;
         /* xcb accepts string in UCS-2 BE, so swap */
@@ -220,7 +220,7 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, wchar_t ch)
 
 int
 utf8decode(char *s, wchar_t *u) {
-    unsigned char c;
+    char c;
     int i, n, rtn;
     rtn = 1;
     c = *s;
@@ -341,13 +341,13 @@ set_attribute (const char modifier, const char attribute)
 
     switch (modifier) {
     case '+':
-        attrs |= (1<<pos);
+        attrs |= (1u<<pos);
         break;
     case '-':
-        attrs &=~(1<<pos);
+        attrs &=~(1u<<pos);
         break;
     case '!':
-        attrs ^= (1<<pos);
+        attrs ^= (1u<<pos);
         break;
     }
 }
@@ -452,7 +452,7 @@ select_drawable_font (const wchar_t c)
         font_t *font = font_list[i];
         if ((c > font->char_min && c < font->char_max &&
                 font->width_lut[c - font->char_min].character_width != 0)||
-                (font->xft_ft && XftCharExists(dpy, font->xft_ft, c)))
+                (font->xft_ft && XftCharExists(dpy, font->xft_ft, (FcChar32) c)))
             return font;
     }
     return NULL;
@@ -716,7 +716,7 @@ set_ewmh_atoms (void)
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_WINDOW_TYPE], XCB_ATOM_ATOM, 32, 1, &atom_list[NET_WM_WINDOW_TYPE_DOCK]);
         xcb_change_property(c, XCB_PROP_MODE_APPEND,  mon->window, atom_list[NET_WM_STATE], XCB_ATOM_ATOM, 32, 2, &atom_list[NET_WM_STATE_STICKY]);
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_DESKTOP], XCB_ATOM_CARDINAL, 32, 1, (const uint32_t []) {
-            -1
+            0u - 1u
         } );
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_STRUT_PARTIAL], XCB_ATOM_CARDINAL, 32, 12, strut);
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_STRUT], XCB_ATOM_CARDINAL, 32, 4, strut);
@@ -793,7 +793,7 @@ monitor_create_chain (xcb_rectangle_t *rects, const int num)
     int left = bx;
 
     /* Sort before use */
-    qsort(rects, num, sizeof(xcb_rectangle_t), rect_sort_cb);
+    qsort(rects, (size_t) num, sizeof(xcb_rectangle_t), rect_sort_cb);
 
     for (i = 0; i < num; i++) {
         int h = rects[i].y + rects[i].height;
@@ -929,6 +929,7 @@ get_randr_monitors (void)
         fprintf(stderr, "No usable RandR output found\n");
         return;
     }
+
 
     xcb_rectangle_t r[valid];
 
@@ -1334,9 +1335,8 @@ main (int argc, char **argv)
                                 area_t *area = area_get(press_ev->event, press_ev->event_x);
                                 /* Respond to the click */
                                 if (area && area->button == press_ev->detail) {
-                                    ssize_t n;
-                                    n = write(STDOUT_FILENO, area->cmd, strlen(area->cmd)); 
-                                    n = write(STDOUT_FILENO, "\n", 1); 
+                                    write(STDOUT_FILENO, area->cmd, strlen(area->cmd)); 
+                                    write(STDOUT_FILENO, "\n", 1); 
                                 }
                             }
                         break;
