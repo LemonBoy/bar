@@ -1339,7 +1339,6 @@ main (int argc, char **argv)
                                     n = write(STDOUT_FILENO, "\n", 1); 
                                 }
                             }
-                        }
                         break;
                     }
 
