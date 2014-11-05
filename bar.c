@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -289,20 +290,24 @@ parse_color (const char *str, char **end, const uint32_t def)
         unsigned int g = (tmp&0x0000ff00) >> 8;
         unsigned int b = (tmp&0x000000ff);
 
-        if (a) {
-            r = (r * 255) / a;
-            g = (g * 255) / a;
-            b = (b * 255) / a;
+        ptrdiff_t len = *end - str;
+        if (len == 8) {
+            if (a == 0) {
+                r = g = b = 0;
+            } else {
+                r = (r * 255) / a;
+                g = (g * 255) / a;
+                b = (b * 255) / a;
 
-            /* Clamp on overflow */
-            if (r > 255) r = 255;
-            if (g > 255) g = 255;
-            if (b > 255) b = 255;
-        } else {
-			
-		}
+                /* Clamp on overflow */
+                if (r > 255) r = 255;
+                if (g > 255) g = 255;
+                if (b > 255) b = 255;
+            }
+        }
 
-        return a << 24 | r << 16 | g << 8 | b;
+        uint32_t c = a << 24 | r << 16 | g << 8 | b;
+        return c;
     }
 
     /* Actual color name, resolve it */
@@ -490,7 +495,8 @@ parse (char *text)
         if (*p == '\0' || *p == '\n')
 			break;
 
-        if (*p == '%' && p++ && *p == '{' && (end = strchr(p++, '}'))) {
+        if (*p == '%' && *(p+1) == '{' && (end = strchr(p+2, '}'))) {
+            p += 2;
             while (p < end) {
                 while (isspace(*p))
                     p++;
@@ -988,7 +994,7 @@ xconn (void)
 
     /* Try to get a RGBA visual and build the colormap for that */
 	visual = get_visual();
-	colormap = DefaultColormap(dpy, scr_nbr); 
+	colormap = DefaultColormap(dpy, scr_nbr);
 
 }
 
@@ -1318,18 +1324,20 @@ main (int argc, char **argv)
                     expose_ev = (xcb_expose_event_t *)ev;
 
                     switch (ev->response_type & 0x7F) {
-                    case XCB_EXPOSE:
-                        if (expose_ev->count == 0)
-                            redraw = true;
-                        break;
-                    case XCB_BUTTON_PRESS:
-                        press_ev = (xcb_button_press_event_t *)ev;
-                        {
-                            area_t *area = area_get(press_ev->event, press_ev->event_x);
-                            /* Respond to the click */
-                            if (area && area->button == press_ev->detail) {
-                                write(STDOUT_FILENO, area->cmd, strlen(area->cmd));
-                                write(STDOUT_FILENO, "\n", 1);
+                        case XCB_EXPOSE:
+                            if (expose_ev->count == 0) 
+                                redraw = true;
+                            break;
+                        case XCB_BUTTON_PRESS:
+                            press_ev = (xcb_button_press_event_t *)ev;
+                            {
+                                area_t *area = area_get(press_ev->event, press_ev->event_x);
+                                /* Respond to the click */
+                                if (area && area->button == press_ev->detail) {
+                                    ssize_t n;
+                                    n = write(STDOUT_FILENO, area->cmd, strlen(area->cmd)); 
+                                    n = write(STDOUT_FILENO, "\n", 1); 
+                                }
                             }
                         }
                         break;
