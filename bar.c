@@ -1252,6 +1252,7 @@ main (int argc, char **argv)
 
     ugc = fgc;
 
+    char* end_ptr = NULL;
     char ch;
     while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:")) != -1) {
         switch (ch) {
@@ -1286,10 +1287,10 @@ main (int argc, char **argv)
             bu = strtoul(optarg, NULL, 10);
             break;
         case 'B':
-            dbgc = bgc = parse_color(optarg, NULL, scr->black_pixel);
+            dbgc = bgc = parse_color(optarg, &end_ptr, scr->black_pixel);
             break;
         case 'F':
-            dfgc = fgc = parse_color(optarg, NULL, scr->white_pixel);
+            dfgc = fgc = parse_color(optarg, &end_ptr, scr->white_pixel);
             break;
         }
     }
