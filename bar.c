@@ -450,7 +450,7 @@ select_drawable_font (const wchar_t c)
      */
     for (int i = 0; font_list[i] != NULL; i++) {
         font_t *font = font_list[i];
-        if ((c >= font->char_min && c <= font->char_max &&
+        if ((font->ptr && c >= font->char_min && c <= font->char_max &&
                 font->width_lut[c - font->char_min].character_width != 0)||
                 (font->xft_ft && XftCharExists(dpy, font->xft_ft, (FcChar32) c)))
             return font;
@@ -639,6 +639,7 @@ font_load (const char *str)
         queryreq = xcb_query_font(c, font);
         font_info = xcb_query_font_reply(c, queryreq, NULL);
 
+        ret->xft_ft = NULL;
         ret->ptr = font;
         ret->descent = font_info->font_descent;
         ret->height = font_info->font_ascent + font_info->font_descent;
@@ -646,6 +647,7 @@ font_load (const char *str)
         ret->char_min = font_info->min_byte1 << 8 | font_info->min_char_or_byte2;
         ret->width_lut = xcb_query_font_char_infos(font_info);
     } else if ((ret->xft_ft = XftFontOpenName (dpy, scr_nbr, str))) {
+        ret->ptr = 0;
         ret->ascent = ret->xft_ft->ascent;
         ret->descent = ret->xft_ft->descent;
         ret->height = ret->ascent + ret->descent;
