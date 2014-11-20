@@ -450,7 +450,7 @@ select_drawable_font (const wchar_t c)
      */
     for (int i = 0; font_list[i] != NULL; i++) {
         font_t *font = font_list[i];
-        if ((c > font->char_min && c < font->char_max &&
+        if ((c >= font->char_min && c <= font->char_max &&
                 font->width_lut[c - font->char_min].character_width != 0)||
                 (font->xft_ft && XftCharExists(dpy, font->xft_ft, (FcChar32) c)))
             return font;
