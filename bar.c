@@ -124,9 +124,9 @@ update_gc (void)
     });
 
     XftColorFree(dpy, visual_ptr, colormap , &sel_fg);
-    char color[8] = "#ffffff";
-    snprintf(color, sizeof(color), "#%06X", fgc);
-
+    char color[] = "#ffffff";
+    uint32_t nfgc = fgc & 0x00ffffff;
+    snprintf(color, sizeof(color), "#%06X", nfgc);
     if (!XftColorAllocName (dpy, visual_ptr, colormap, color, &sel_fg)) {
         fprintf(stderr, "Couldn't allocate xft font color '%s'\n", color);
     }
@@ -1102,8 +1102,9 @@ init (void)
         xcb_map_window(c, mon->window);
     }
 
-    char color[8] = "#ffffff";
-    snprintf(color, sizeof(color), "#%06X", fgc);
+    char color[] = "#ffffff";
+    uint32_t nfgc = fgc & 0x00ffffff;
+    snprintf(color, sizeof(color), "#%06X", nfgc);
 
     if (!XftColorAllocName (dpy, visual_ptr, colormap, color, &sel_fg)) {
         fprintf(stderr, "Couldn't allocate xft font color '%s'\n", color);
@@ -1296,7 +1297,6 @@ main (int argc, char **argv)
             break;
         }
     }
-
     /* Copy the geometry values in place */
     bw = geom_v[0];
     bh = geom_v[1];
@@ -1307,7 +1307,6 @@ main (int argc, char **argv)
     init();
     /* Get the fd to Xserver */
     pollin[1].fd = xcb_get_file_descriptor(c);
-
     for (;;) {
         bool redraw = false;
 
