@@ -295,9 +295,9 @@ parse_color (const char *str, char **end, const uint32_t def)
             if (a == 0) {
                 r = g = b = 0;
             } else {
-                r = (r * 255) / a;
-                g = (g * 255) / a;
-                b = (b * 255) / a;
+                r = (r * a) / 255;
+                g = (g * a) / 255;
+                b = (b * a) / 255;
 
                 /* Clamp on overflow */
                 if (r > 255) r = 255;
