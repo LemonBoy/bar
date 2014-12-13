@@ -249,6 +249,7 @@ bool
 area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x, const int align, const int button)
 {
     char *p = str;
+    char *trail;
     area_t *a = &astack.slot[astack.pos];
 
     if (astack.pos == N) {
@@ -286,7 +287,9 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
         return true;
     }
 
-    char *trail = strchr(++p, ':');
+    /* Found the closing : and check if it's just an escaped one */
+    for (trail = strchr(++p, ':'); trail && trail[-1] == '\\'; trail = strchr(trail + 1, ':'))
+        ;
 
     /* Find the trailing : and make sure it's whitin the formatting block, also reject empty commands */
     if (!trail || p == trail || trail > optend) {
@@ -295,6 +298,15 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
     }
 
     *trail = '\0';
+
+    /* Sanitize the user command by unescaping all the : */
+    for (char *needle = p; *needle; needle++) {
+        int delta = trail - &needle[1];
+        if (needle[0] == '\\' && needle[1] == ':') {
+            memmove(&needle[0], &needle[1], delta);
+            needle[delta] = 0;
+        }
+    }
 
     /* This is a pointer to the string buffer allocated in the main */
     a->cmd = p;
