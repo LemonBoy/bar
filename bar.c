@@ -1119,6 +1119,10 @@ main (int argc, char **argv)
     for (;;) {
         bool redraw = false;
 
+        /* If connection is in error state, then it has been shut down. */
+        if (xcb_connection_has_error(c))
+            break;
+
         if (poll(pollin, 2, -1) > 0) {
             if (pollin[0].revents & POLLHUP) {      /* No more data... */
                 if (permanent) pollin[0].fd = -1;   /* ...null the fd and continue polling :D */
