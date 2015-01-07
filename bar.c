@@ -589,11 +589,16 @@ monitor_new (int x, int y, int width, int height)
     ret->window = xcb_generate_id(c);
 
     int depth = (vt->visual_id == scr->root_visual) ? XCB_COPY_FROM_PARENT : 32;
+    const uint32_t events =
+        XCB_EVENT_MASK_EXPOSURE     |
+        XCB_EVENT_MASK_BUTTON_PRESS |
+        XCB_EVENT_MASK_ENTER_WINDOW |
+        XCB_EVENT_MASK_LEAVE_WINDOW;
     xcb_create_window(c, depth, ret->window, scr->root,
             x, win_y, width, bh, 0,
             XCB_WINDOW_CLASS_INPUT_OUTPUT, vt->visual_id,
             XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP,
-            (const uint32_t []){ scr->black_pixel, scr->black_pixel, dock, XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_BUTTON_PRESS, colormap });
+            (const uint32_t []){ scr->black_pixel, scr->black_pixel, dock, events, colormap });
 
     ret->surface = cairo_xcb_surface_create(c, ret->window, vt, width, height);
     if (!cairo_surface_status != CAIRO_STATUS_SUCCESS) {
@@ -1059,6 +1064,7 @@ main (int argc, char **argv)
     xcb_button_press_event_t *press_ev;
     char input[4096] = {0, };
     bool permanent = false;
+    bool enterleave = false;
     int geom_v[4] = { -1, -1, 0, 0 };
 
     /* Install the parachute! */
@@ -1073,7 +1079,7 @@ main (int argc, char **argv)
     fgc = scr->white_pixel;
 
     char ch;
-    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:")) != -1) {
+    while ((ch = getopt(argc, argv, "hg:bdef:a:pu:B:F:")) != -1) {
         switch (ch) {
             case 'h':
                 printf ("usage: %s [-h | -g | -b | -d | -f | -a | -p | -u | -B | -F]\n"
@@ -1081,6 +1087,7 @@ main (int argc, char **argv)
                         "\t-g Set the bar geometry {width}x{height}+{xoffset}+{yoffset}\n"
                         "\t-b Put bar at the bottom of the screen\n"
                         "\t-d Force docking (use this if your WM isn't EWMH compliant)\n"
+                        "\t-e Output enter and leave window events\n"
                         "\t-f Bar font list, comma separated\n"
                         "\t-p Don't close after the data ends\n"
                         "\t-u Set the underline/overline height in pixels\n"
@@ -1091,6 +1098,7 @@ main (int argc, char **argv)
             case 'p': permanent = true; break;
             case 'b': topbar = false; break;
             case 'd': dock = true; break;
+            case 'e': enterleave = true; break;
             case 'f': parse_font_list(optarg); break;
             case 'u': bu = strtoul(optarg, NULL, 10); break;
             case 'B': bgc = parse_color(optarg, NULL, scr->black_pixel); break;
@@ -1146,6 +1154,14 @@ main (int argc, char **argv)
                                     write(STDOUT_FILENO, area->cmd, strlen(area->cmd)); 
                                     write(STDOUT_FILENO, "\n", 1); 
                                 }
+                            }
+                            break;
+                        case XCB_ENTER_NOTIFY:
+                        case XCB_LEAVE_NOTIFY:
+                            {
+                                bool entered = ev->response_type == XCB_ENTER_NOTIFY;
+                                if (enterleave)
+                                    write(STDOUT_FILENO, entered ? "enter\n": "leave\n", 6);
                             }
                             break;
                     }
