@@ -76,6 +76,7 @@ static int bu = 1; /* Underline height */
 static char *mfont = NULL;
 static uint32_t fgc, bgc; 
 static area_stack_t astack;
+static char *img_file = NULL;
 
 enum {
     PAL_BG,
@@ -110,7 +111,7 @@ cairo_copy (cairo_t *cr, cairo_surface_t *s, int sx, int sy, int dx, int dy, int
 }
 
 int
-draw_char (monitor_t *mon, int x, int align, char *ch)
+draw_char (monitor_t *mon, int x, int align, char *ch, int draw_image)
 {
     cairo_font_extents_t ext;
     cairo_text_extents_t te;
@@ -134,10 +135,22 @@ draw_char (monitor_t *mon, int x, int align, char *ch)
     /* Draw the background first */
     fill_rect(mon->cr, PAL_BG, x, by, ch_width, bh);
 
-    /* String baseline coordinates */
-    cairo_move_to(mon->cr, x, bh / 2 + ext.height / 2 - ext.descent);
-    cairo_set_color(mon->cr, PAL_FG);
-    cairo_show_text(mon->cr, ch);
+
+    if (draw_image && img_file != NULL) {
+      cairo_surface_t *img;
+      img = cairo_image_surface_create_from_png(img_file);
+      int w = cairo_image_surface_get_width(img);
+      int h = cairo_image_surface_get_height(img);
+      cairo_set_source_surface(mon->cr, img, x, 0);
+      cairo_mask_surface(mon->cr, img, x, 0);
+      ch_width = w;
+      cairo_surface_destroy(img);
+    } else {
+      /* String baseline coordinates */
+      cairo_move_to(mon->cr, x, bh / 2 + ext.height / 2 - ext.descent);
+      cairo_set_color(mon->cr, PAL_FG);
+      cairo_show_text(mon->cr, ch);
+    }
 
     /* We can render both at the same time */
     if (attrs & ATTR_OVERL)
@@ -246,6 +259,31 @@ area_shift (xcb_window_t win, const int align, int delta)
     }
 }
 
+bool get_image_file(char *str, char *optend, char **end)
+{
+    char *p = str;
+
+    /* Closing tag. */
+    if (*p != ':') {
+        *end = p;
+        return false;
+    }
+
+    char *trail = strchr(++p, ':');
+
+    /* Find the trailing : and make sure it's whitin the formatting block, also reject empty files */
+    if (!trail || p == trail || trail > optend) {
+        *end = p;
+        return false;
+    }
+
+    *trail = '\0';
+    img_file = p;
+    *end = trail + 1;
+
+    return true;
+}
+
 bool
 area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x, const int align, const int button)
 {
@@ -328,6 +366,8 @@ parse (char *text)
         fill_rect(m->cr, PAL_BG, 0, 0, m->width, bh);
     }
 
+    bool char_is_image = false;
+
     for (;;) {
         if (*p == '\0' || *p == '\n')
             return;
@@ -352,6 +392,9 @@ parse (char *text)
                     case 'c': pos_x = 0; align = ALIGN_C; break;
                     case 'r': pos_x = 0; align = ALIGN_R; break;
 
+                    case 'I':
+                              char_is_image = get_image_file(p, end, &p);
+                              break;
                     case 'A': 
                               button = XCB_BUTTON_INDEX_1;
                               /* The range is 1-5 */
@@ -413,7 +456,7 @@ parse (char *text)
                 tmp[i] = *p++;
             tmp[size] = '\0';
 
-            int w = draw_char(cur_mon, pos_x, align, tmp);
+            int w = draw_char(cur_mon, pos_x, align, tmp, char_is_image);
 
             pos_x += w;
             area_shift(cur_mon->window, align, w);
