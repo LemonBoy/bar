@@ -34,7 +34,9 @@ typedef struct area_t {
     char *cmd;
 } area_t;
 
-#define N 20
+#define N                   20
+#define MAX_IMAGES          20
+#define MAX_IMAGE_FILENAME  100
 
 typedef struct area_stack_t {
     int pos;
@@ -63,6 +65,11 @@ enum {
     GC_MAX
 };
 
+typedef struct {
+    char filename[MAX_IMAGE_FILENAME];
+    cairo_surface_t *data;
+} image_t;
+
 static xcb_connection_t *c;
 static xcb_screen_t *scr;
 static xcb_visualtype_t *vt;
@@ -74,8 +81,11 @@ static bool topbar = true;
 static int bw = -1, bh = -1, bx = 0, by = 0;
 static int bu = 1; /* Underline height */
 static char *mfont = NULL;
+static double mfont_size = 10.0;
 static uint32_t fgc, bgc; 
 static area_stack_t astack;
+static image_t imgs[MAX_IMAGES];
+static char *img_file;
 
 enum {
     PAL_BG,
@@ -86,13 +96,13 @@ enum {
 
 static color_t palette[PAL_MAX];
 
-void
+    void
 cairo_set_color (cairo_t *cr, const int i)
 {
     cairo_set_source_rgba(cr, palette[i].r, palette[i].g, palette[i].b, palette[i].a);
 }
 
-void
+    void
 fill_rect (cairo_t *cr, const int i, int x, int y, int width, int height)
 {
     cairo_set_color(cr, i);
@@ -101,7 +111,7 @@ fill_rect (cairo_t *cr, const int i, int x, int y, int width, int height)
     cairo_fill(cr);
 }
 
-void
+    void
 cairo_copy (cairo_t *cr, cairo_surface_t *s, int sx, int sy, int dx, int dy, int w, int h)
 {
     cairo_set_source_surface(cr, s, dx - sx, dy - sy);
@@ -109,16 +119,50 @@ cairo_copy (cairo_t *cr, cairo_surface_t *s, int sx, int sy, int dx, int dy, int
     cairo_fill (cr);
 }
 
-int
-draw_char (monitor_t *mon, int x, int align, char *ch)
+    cairo_surface_t *
+load_image(char *filename)
+{
+    int i;
+    for (i = 0; i < MAX_IMAGES; i++) {
+        if (imgs[i].filename[0] == '\0') {
+            break;
+        } else if (!strncmp(filename, imgs[i].filename, MAX_IMAGE_FILENAME)) {
+            return imgs[i].data;
+        }
+    }
+
+    /* We boot the first thing in the cache.  Approximate LRU. */
+    if (i >= MAX_IMAGES) {
+        i = 0;
+        cairo_surface_destroy(imgs[i].data);
+    }
+
+    strncpy(imgs[i].filename, filename, MAX_IMAGE_FILENAME);
+    imgs[i].data = cairo_image_surface_create_from_png(filename);
+
+    return imgs[i].data;
+}
+
+    int
+draw_char (monitor_t *mon, int x, int align, char *ch, int draw_image)
 {
     cairo_font_extents_t ext;
     cairo_text_extents_t te;
     cairo_font_extents(mon->cr, &ext);
     cairo_text_extents(mon->cr, ch, &te);
 
-    int ch_width = (int)te.x_advance + 1;
-    /*printf("%f %i %i\n", te.x_advance, (int)te.x_advance, ch_width);*/
+    int ch_width;
+
+    /* Calculate the width of the character or image. */
+    cairo_surface_t *img;
+    if (draw_image && img_file != NULL) {
+        img = load_image(img_file);
+        int w = cairo_image_surface_get_width(img);
+        int h = cairo_image_surface_get_height(img);
+        ch_width = w;
+    } else {
+        ch_width = (int)te.x_advance + 1;
+    }
 
     switch (align) {
         case ALIGN_C:
@@ -134,10 +178,16 @@ draw_char (monitor_t *mon, int x, int align, char *ch)
     /* Draw the background first */
     fill_rect(mon->cr, PAL_BG, x, by, ch_width, bh);
 
-    /* String baseline coordinates */
-    cairo_move_to(mon->cr, x, bh / 2 + ext.height / 2 - ext.descent);
-    cairo_set_color(mon->cr, PAL_FG);
-    cairo_show_text(mon->cr, ch);
+    if (draw_image && img != NULL) {
+        cairo_set_source_surface(mon->cr, img, x, 0);
+        cairo_mask_surface(mon->cr, img, x, 0);
+        //cairo_surface_destroy(img);
+    } else {
+        /* String baseline coordinates */
+        cairo_move_to(mon->cr, x, bh / 2 + ext.height / 2 - ext.descent);
+        cairo_set_color(mon->cr, PAL_FG);
+        cairo_show_text(mon->cr, ch);
+    }
 
     /* We can render both at the same time */
     if (attrs & ATTR_OVERL)
@@ -148,7 +198,7 @@ draw_char (monitor_t *mon, int x, int align, char *ch)
     return ch_width; 
 }
 
-uint32_t
+    uint32_t
 parse_color (const char *str, char **end, const uint32_t def)
 {
     xcb_alloc_named_color_reply_t *nc_reply;
@@ -193,7 +243,7 @@ parse_color (const char *str, char **end, const uint32_t def)
     return ret;
 }
 
-void
+    void
 convert_color (const uint32_t col, color_t *out) 
 {
     out->b = ((col >> 0)&0xff) / 255.0;
@@ -203,7 +253,7 @@ convert_color (const uint32_t col, color_t *out)
     out->a = 1.0;
 }
 
-void
+    void
 set_attribute (const char modifier, const char attribute)
 {
     int pos = indexof(attribute, "ou");
@@ -221,7 +271,7 @@ set_attribute (const char modifier, const char attribute)
 }
 
 
-area_t *
+    area_t *
 area_get (xcb_window_t win, const int x)
 {
     for (int i = 0; i < astack.pos; i++)
@@ -230,7 +280,7 @@ area_get (xcb_window_t win, const int x)
     return NULL;
 }
 
-void
+    void
 area_shift (xcb_window_t win, const int align, int delta)
 {
     if (align == ALIGN_L)
@@ -246,7 +296,37 @@ area_shift (xcb_window_t win, const int align, int delta)
     }
 }
 
-bool
+bool get_image_file(char *str, char *optend, char **end)
+{
+    char *p = str;
+
+    /* Closing tag. */
+    if (*p != ':') {
+        *end = p;
+        return false;
+    }
+
+    char *trail = strchr(++p, ':');
+
+    /* Find the trailing : and make sure it's whitin the formatting block, also reject empty files */
+    if (!trail || p == trail || trail > optend) {
+        *end = p;
+        return false;
+    }
+
+    *trail = '\0';
+    img_file = p;
+    *end = trail + 1;
+
+    /* Check if the image exists. */
+    if (access(img_file, F_OK) == -1) {
+        return false;
+    }
+
+    return true;
+}
+
+    bool
 area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x, const int align, const int button)
 {
     char *p = str;
@@ -309,7 +389,7 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
     return true;
 }
 
-void
+    void
 parse (char *text)
 {
     monitor_t *cur_mon;
@@ -327,6 +407,8 @@ parse (char *text)
         cairo_set_operator(m->cr, CAIRO_OPERATOR_SOURCE);
         fill_rect(m->cr, PAL_BG, 0, 0, m->width, bh);
     }
+
+    bool char_is_image = false;
 
     for (;;) {
         if (*p == '\0' || *p == '\n')
@@ -352,6 +434,9 @@ parse (char *text)
                     case 'c': pos_x = 0; align = ALIGN_C; break;
                     case 'r': pos_x = 0; align = ALIGN_R; break;
 
+                    case 'I':
+                              char_is_image = get_image_file(p, end, &p);
+                              break;
                     case 'A': 
                               button = XCB_BUTTON_INDEX_1;
                               /* The range is 1-5 */
@@ -378,8 +463,8 @@ parse (char *text)
                               { cur_mon = montail ? montail : monhead; }
                               else if (isdigit(*p))
                               { cur_mon = monhead;
-                                for (int i = 0; i != *p-'0' && cur_mon->next; i++)
-                                    cur_mon = cur_mon->next;
+                                  for (int i = 0; i != *p-'0' && cur_mon->next; i++)
+                                      cur_mon = cur_mon->next;
                               }
                               else
                               { p++; continue; }
@@ -388,37 +473,37 @@ parse (char *text)
                               pos_x = 0;
                               break;
 
-                    /* In case of error keep parsing after the closing } */
-                    default:
-                        p = end;
-                }
+                              /* In case of error keep parsing after the closing } */
+                default:
+                              p = end;
             }
-            /* Eat the trailing } */
-            p++;
-        } else {
-            const int utf8_size[] = {
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0xC0-0xCF
-                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0xD0-0xDF
-                3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // 0xE0-0xEF
-                4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, // 0xF0-0xFF
-            };
-            int size = ((uint8_t)p[0]&0x80) ? utf8_size[(uint8_t)p[0]^0x80] : 1;
-                    
-            char tmp[size];
-            for (int i = 0; i < size; i++)
-                tmp[i] = *p++;
-            tmp[size] = '\0';
-
-            int w = draw_char(cur_mon, pos_x, align, tmp);
-
-            pos_x += w;
-            area_shift(cur_mon->window, align, w);
         }
-    }
+        /* Eat the trailing } */
+        p++;
+} else {
+    const int utf8_size[] = {
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0xC0-0xCF
+        2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0xD0-0xDF
+        3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // 0xE0-0xEF
+        4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, // 0xF0-0xFF
+    };
+    int size = ((uint8_t)p[0]&0x80) ? utf8_size[(uint8_t)p[0]^0x80] : 1;
+
+    char tmp[size];
+    for (int i = 0; i < size; i++)
+        tmp[i] = *p++;
+    tmp[size] = '\0';
+
+    int w = draw_char(cur_mon, pos_x, align, tmp, char_is_image);
+
+    pos_x += w;
+    area_shift(cur_mon->window, align, w);
+}
+}
 }
 
 enum {
@@ -432,7 +517,7 @@ enum {
     NET_WM_STATE_ABOVE,
 };
 
-void
+    void
 set_ewmh_atoms (void)
 {
     const char *atom_names[] = {
@@ -485,7 +570,7 @@ set_ewmh_atoms (void)
     }
 }
 
-monitor_t *
+    monitor_t *
 monitor_new (int x, int y, int width, int height)
 {
     monitor_t *ret;
@@ -504,11 +589,16 @@ monitor_new (int x, int y, int width, int height)
     ret->window = xcb_generate_id(c);
 
     int depth = (vt->visual_id == scr->root_visual) ? XCB_COPY_FROM_PARENT : 32;
+    const uint32_t events =
+        XCB_EVENT_MASK_EXPOSURE     |
+        XCB_EVENT_MASK_BUTTON_PRESS |
+        XCB_EVENT_MASK_ENTER_WINDOW |
+        XCB_EVENT_MASK_LEAVE_WINDOW;
     xcb_create_window(c, depth, ret->window, scr->root,
             x, win_y, width, bh, 0,
             XCB_WINDOW_CLASS_INPUT_OUTPUT, vt->visual_id,
             XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP,
-            (const uint32_t []){ scr->black_pixel, scr->black_pixel, dock, XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_BUTTON_PRESS, colormap });
+            (const uint32_t []){ scr->black_pixel, scr->black_pixel, dock, events, colormap });
 
     ret->surface = cairo_xcb_surface_create(c, ret->window, vt, width, height);
     if (!cairo_surface_status != CAIRO_STATUS_SUCCESS) {
@@ -517,11 +607,12 @@ monitor_new (int x, int y, int width, int height)
     ret->cr = cairo_create(ret->surface);
 
     cairo_select_font_face (ret->cr, mfont? mfont: "fixed", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+    cairo_set_font_size(ret->cr, mfont_size);
 
     return ret;
 }
 
-void
+    void
 monitor_add (monitor_t *mon)
 {
     if (!monhead) {
@@ -537,7 +628,7 @@ monitor_add (monitor_t *mon)
     }
 }
 
-int
+    int
 rect_sort_cb (const void *p1, const void *p2)
 {
     const xcb_rectangle_t *r1 = (xcb_rectangle_t *)p1;
@@ -551,7 +642,7 @@ rect_sort_cb (const void *p1, const void *p2)
     return 0;
 }
 
-void
+    void
 monitor_create_chain (xcb_rectangle_t *rects, const int num)
 {
     int i;
@@ -567,7 +658,7 @@ monitor_create_chain (xcb_rectangle_t *rects, const int num)
         width += rects[i].width;
         /* Get height of screen from y_offset + height of lowest monitor */
         if (h >= height)
-        height = h;
+            height = h;
     }
 
     if (bw < 0)
@@ -610,7 +701,7 @@ monitor_create_chain (xcb_rectangle_t *rects, const int num)
     }
 }
 
-void
+    void
 get_randr_monitors (void)
 {
     xcb_randr_get_screen_resources_current_reply_t *rres_reply;
@@ -681,7 +772,7 @@ get_randr_monitors (void)
 
             if (i != j && rects[j].width) {
                 if (rects[j].x >= rects[i].x && rects[j].x + rects[j].width <= rects[i].x + rects[i].width &&
-                    rects[j].y >= rects[i].y && rects[j].y + rects[j].height <= rects[i].y + rects[i].height) {
+                        rects[j].y >= rects[i].y && rects[j].y + rects[j].height <= rects[i].y + rects[i].height) {
                     rects[j].width = 0;
                     valid--;
                 }
@@ -703,7 +794,7 @@ get_randr_monitors (void)
     monitor_create_chain(r, valid);
 }
 
-void
+    void
 get_xinerama_monitors (void)
 {
     xcb_xinerama_query_screens_reply_t *xqs_reply;
@@ -732,7 +823,7 @@ get_xinerama_monitors (void)
     monitor_create_chain(rects, screens);
 }
 
-xcb_visualtype_t *
+    xcb_visualtype_t *
 get_visual_type (void)
 {
     xcb_depth_iterator_t iter;
@@ -764,7 +855,7 @@ get_visual_type (void)
     return NULL;
 }
 
-void
+    void
 xconn (void)
 {
     /* Connect to X */
@@ -784,7 +875,7 @@ xconn (void)
     xcb_create_colormap(c, XCB_COLORMAP_ALLOC_NONE, colormap, scr->root, vt->visual_id);
 }
 
-void
+    void
 init (void)
 {
     /* To make the alignment uniform */
@@ -850,7 +941,7 @@ init (void)
     xcb_flush(c);
 }
 
-void
+    void
 cleanup (void)
 {
     while (monhead) {
@@ -868,7 +959,7 @@ cleanup (void)
         xcb_disconnect(c);
 }
 
-void
+    void
 sighandle (int signal)
 {
     if (signal == SIGINT || signal == SIGTERM)
@@ -876,7 +967,7 @@ sighandle (int signal)
 }
 
 /* Parse an X-styled geometry string, we don't support signed offsets tho. */
-bool
+    bool
 parse_geometry_string (char *str, int *tmp)
 {
     char *p = str;
@@ -926,7 +1017,7 @@ parse_geometry_string (char *str, int *tmp)
     return true;
 }
 
-void
+    void
 parse_font_list (char *str)
 {
     char *tok;
@@ -934,14 +1025,34 @@ parse_font_list (char *str)
     if (!str)
         return;
 
-    tok = strtok(str, ",");
-    if (tok)
+    mfont = str; // font face
+
+    // check for a colon
+    tok = strtok(mfont, ":");
+    // if there's a string before the colon
+    if(tok) {
+        // treat the string before the colon as the font face
         mfont = tok;
+
+        // check for characters after the colon
+        tok = strtok(NULL, ":");
+        // if they exist
+        if(tok) {
+            double candidate_size;
+            // convert them to a double
+            candidate_size = atof(tok);
+            // if the size is non-zero
+            if(candidate_size != 0) {
+                // use as the new font size
+                mfont_size = candidate_size;
+            }
+        }
+    }
 
     return;
 }
 
-int
+    int
 main (int argc, char **argv)
 {
     struct pollfd pollin[2] = {
@@ -953,6 +1064,7 @@ main (int argc, char **argv)
     xcb_button_press_event_t *press_ev;
     char input[4096] = {0, };
     bool permanent = false;
+    bool enterleave = false;
     int geom_v[4] = { -1, -1, 0, 0 };
 
     /* Install the parachute! */
@@ -967,7 +1079,7 @@ main (int argc, char **argv)
     fgc = scr->white_pixel;
 
     char ch;
-    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:")) != -1) {
+    while ((ch = getopt(argc, argv, "hg:bdef:a:pu:B:F:")) != -1) {
         switch (ch) {
             case 'h':
                 printf ("usage: %s [-h | -g | -b | -d | -f | -a | -p | -u | -B | -F]\n"
@@ -975,6 +1087,7 @@ main (int argc, char **argv)
                         "\t-g Set the bar geometry {width}x{height}+{xoffset}+{yoffset}\n"
                         "\t-b Put bar at the bottom of the screen\n"
                         "\t-d Force docking (use this if your WM isn't EWMH compliant)\n"
+                        "\t-e Output enter and leave window events\n"
                         "\t-f Bar font list, comma separated\n"
                         "\t-p Don't close after the data ends\n"
                         "\t-u Set the underline/overline height in pixels\n"
@@ -985,6 +1098,7 @@ main (int argc, char **argv)
             case 'p': permanent = true; break;
             case 'b': topbar = false; break;
             case 'd': dock = true; break;
+            case 'e': enterleave = true; break;
             case 'f': parse_font_list(optarg); break;
             case 'u': bu = strtoul(optarg, NULL, 10); break;
             case 'B': bgc = parse_color(optarg, NULL, scr->black_pixel); break;
@@ -1040,6 +1154,14 @@ main (int argc, char **argv)
                                     write(STDOUT_FILENO, area->cmd, strlen(area->cmd)); 
                                     write(STDOUT_FILENO, "\n", 1); 
                                 }
+                            }
+                            break;
+                        case XCB_ENTER_NOTIFY:
+                        case XCB_LEAVE_NOTIFY:
+                            {
+                                bool entered = ev->response_type == XCB_ENTER_NOTIFY;
+                                if (enterleave)
+                                    write(STDOUT_FILENO, entered ? "enter\n": "leave\n", 6);
                             }
                             break;
                     }

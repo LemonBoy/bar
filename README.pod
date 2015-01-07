@@ -34,7 +34,7 @@ Force docking without asking the window manager. This is needed if the window ma
 
 =item B<-f> I<font>
 
-Comma separated list of fonts, bar supports a maximum of two fonts.
+Font face. Size can be specified as <font>:<size>
 
 =item B<-p>
 
@@ -95,6 +95,12 @@ Create a clickable area starting from the current position, when the area is cli
 Eg. I<%{A:reboot:} Click here to reboot %{A}>
 
 The I<button> field is optional, it defaults to the left button, and it's a number ranging from 1 to 5 which maps to the left, middle, right, scroll down and scroll up movements. Your mileage may vary.
+
+=item B<I>:I<filename>:
+
+Load an image. The individual characters between the opening and closing tags act as formatters and default strings if the file doesn't exist.
+
+Eg. I<%{I:battery.png:} B %{I}>
 
 =item B<S>I<dir>
 
