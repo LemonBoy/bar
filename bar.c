@@ -118,8 +118,18 @@ draw_char (monitor_t *mon, int x, int align, char *ch, int draw_image)
     cairo_font_extents(mon->cr, &ext);
     cairo_text_extents(mon->cr, ch, &te);
 
-    int ch_width = (int)te.x_advance + 1;
-    /*printf("%f %i %i\n", te.x_advance, (int)te.x_advance, ch_width);*/
+    int ch_width;
+
+    /* Calculate the width of the character or image. */
+    cairo_surface_t *img;
+    if (draw_image && img_file != NULL) {
+      img = cairo_image_surface_create_from_png(img_file);
+      int w = cairo_image_surface_get_width(img);
+      int h = cairo_image_surface_get_height(img);
+      ch_width = w;
+    } else {
+      ch_width = (int)te.x_advance + 1;
+    }
 
     switch (align) {
         case ALIGN_C:
@@ -135,15 +145,9 @@ draw_char (monitor_t *mon, int x, int align, char *ch, int draw_image)
     /* Draw the background first */
     fill_rect(mon->cr, PAL_BG, x, by, ch_width, bh);
 
-
-    if (draw_image && img_file != NULL) {
-      cairo_surface_t *img;
-      img = cairo_image_surface_create_from_png(img_file);
-      int w = cairo_image_surface_get_width(img);
-      int h = cairo_image_surface_get_height(img);
+    if (draw_image && img != NULL) {
       cairo_set_source_surface(mon->cr, img, x, 0);
       cairo_mask_surface(mon->cr, img, x, 0);
-      ch_width = w;
       cairo_surface_destroy(img);
     } else {
       /* String baseline coordinates */
