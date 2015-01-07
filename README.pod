@@ -88,6 +88,12 @@ Set the text foreground color. The parameter I<color> can be I<-> or a color in 
 
 Set the text underline color. The parameter I<color> can be I<-> or a color in one of the formats mentioned before. The special value I<-> resets the color to the default one.
 
+=item B<I>:I<filename>:
+
+Load an image. The individual character between the opening and closing tags act as formatters and default strings if the file doesn't exist.
+
+Eg. I<%{I:battery.png:} B %{I}>
+
 =item B<A>I<button>:I<command>:
 
 Create a clickable area starting from the current position, when the area is clicked I<command> is executed. The area is closed when a B<A> token, not followed by : is encountered.
