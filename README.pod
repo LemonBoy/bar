@@ -96,6 +96,12 @@ Eg. I<%{A:reboot:} Click here to reboot %{A}>
 
 The I<button> field is optional, it defaults to the left button, and it's a number ranging from 1 to 5 which maps to the left, middle, right, scroll down and scroll up movements. Your mileage may vary.
 
+=item B<I>:I<filename>:
+
+Load an image. The individual characters between the opening and closing tags act as formatters and default strings if the file doesn't exist.
+
+Eg. I<%{I:battery.png:} B %{I}>
+
 =item B<S>I<dir>
 
 Change the monitor bar is rendering to. I<dir> can be either
