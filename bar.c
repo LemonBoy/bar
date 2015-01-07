@@ -34,7 +34,9 @@ typedef struct area_t {
     char *cmd;
 } area_t;
 
-#define N 20
+#define N                   20
+#define MAX_IMAGES          20
+#define MAX_IMAGE_FILENAME  50
 
 typedef struct area_stack_t {
     int pos;
@@ -63,6 +65,11 @@ enum {
     GC_MAX
 };
 
+typedef struct {
+  char filename[MAX_IMAGE_FILENAME];
+  cairo_surface_t *data;
+} image_t;
+
 static xcb_connection_t *c;
 static xcb_screen_t *scr;
 static xcb_visualtype_t *vt;
@@ -76,7 +83,8 @@ static int bu = 1; /* Underline height */
 static char *mfont = NULL;
 static uint32_t fgc, bgc; 
 static area_stack_t astack;
-static char *img_file = NULL;
+static image_t imgs[MAX_IMAGES];
+static char *img_file;
 
 enum {
     PAL_BG,
@@ -110,6 +118,30 @@ cairo_copy (cairo_t *cr, cairo_surface_t *s, int sx, int sy, int dx, int dy, int
     cairo_fill (cr);
 }
 
+cairo_surface_t *
+load_image(char *filename)
+{
+    int i;
+    for (i = 0; i < MAX_IMAGES; i++) {
+        if (imgs[i].filename[0] == '\0') {
+            break;
+        } else if (!strncmp(filename, imgs[i].filename, MAX_IMAGE_FILENAME)) {
+            return imgs[i].data;
+        }
+    }
+
+    /* We boot the first thing in the cache.  Approximate LRU. */
+    if (i >= MAX_IMAGES) {
+        i = 0;
+        cairo_surface_destroy(imgs[i].data);
+    }
+
+    strncpy(imgs[i].filename, filename, MAX_IMAGE_FILENAME);
+    imgs[i].data = cairo_image_surface_create_from_png(filename);
+
+    return imgs[i].data;
+}
+
 int
 draw_char (monitor_t *mon, int x, int align, char *ch, int draw_image)
 {
@@ -123,7 +155,7 @@ draw_char (monitor_t *mon, int x, int align, char *ch, int draw_image)
     /* Calculate the width of the character or image. */
     cairo_surface_t *img;
     if (draw_image && img_file != NULL) {
-      img = cairo_image_surface_create_from_png(img_file);
+      img = load_image(img_file);
       int w = cairo_image_surface_get_width(img);
       int h = cairo_image_surface_get_height(img);
       ch_width = w;
@@ -148,7 +180,7 @@ draw_char (monitor_t *mon, int x, int align, char *ch, int draw_image)
     if (draw_image && img != NULL) {
       cairo_set_source_surface(mon->cr, img, x, 0);
       cairo_mask_surface(mon->cr, img, x, 0);
-      cairo_surface_destroy(img);
+      //cairo_surface_destroy(img);
     } else {
       /* String baseline coordinates */
       cairo_move_to(mon->cr, x, bh / 2 + ext.height / 2 - ext.descent);
