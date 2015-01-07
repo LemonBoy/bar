@@ -36,7 +36,7 @@ typedef struct area_t {
 
 #define N                   20
 #define MAX_IMAGES          20
-#define MAX_IMAGE_FILENAME  50
+#define MAX_IMAGE_FILENAME  100
 
 typedef struct area_stack_t {
     int pos;
@@ -66,8 +66,8 @@ enum {
 };
 
 typedef struct {
-  char filename[MAX_IMAGE_FILENAME];
-  cairo_surface_t *data;
+    char filename[MAX_IMAGE_FILENAME];
+    cairo_surface_t *data;
 } image_t;
 
 static xcb_connection_t *c;
@@ -95,13 +95,13 @@ enum {
 
 static color_t palette[PAL_MAX];
 
-void
+    void
 cairo_set_color (cairo_t *cr, const int i)
 {
     cairo_set_source_rgba(cr, palette[i].r, palette[i].g, palette[i].b, palette[i].a);
 }
 
-void
+    void
 fill_rect (cairo_t *cr, const int i, int x, int y, int width, int height)
 {
     cairo_set_color(cr, i);
@@ -110,7 +110,7 @@ fill_rect (cairo_t *cr, const int i, int x, int y, int width, int height)
     cairo_fill(cr);
 }
 
-void
+    void
 cairo_copy (cairo_t *cr, cairo_surface_t *s, int sx, int sy, int dx, int dy, int w, int h)
 {
     cairo_set_source_surface(cr, s, dx - sx, dy - sy);
@@ -118,7 +118,7 @@ cairo_copy (cairo_t *cr, cairo_surface_t *s, int sx, int sy, int dx, int dy, int
     cairo_fill (cr);
 }
 
-cairo_surface_t *
+    cairo_surface_t *
 load_image(char *filename)
 {
     int i;
@@ -142,7 +142,7 @@ load_image(char *filename)
     return imgs[i].data;
 }
 
-int
+    int
 draw_char (monitor_t *mon, int x, int align, char *ch, int draw_image)
 {
     cairo_font_extents_t ext;
@@ -155,12 +155,12 @@ draw_char (monitor_t *mon, int x, int align, char *ch, int draw_image)
     /* Calculate the width of the character or image. */
     cairo_surface_t *img;
     if (draw_image && img_file != NULL) {
-      img = load_image(img_file);
-      int w = cairo_image_surface_get_width(img);
-      int h = cairo_image_surface_get_height(img);
-      ch_width = w;
+        img = load_image(img_file);
+        int w = cairo_image_surface_get_width(img);
+        int h = cairo_image_surface_get_height(img);
+        ch_width = w;
     } else {
-      ch_width = (int)te.x_advance + 1;
+        ch_width = (int)te.x_advance + 1;
     }
 
     switch (align) {
@@ -178,14 +178,14 @@ draw_char (monitor_t *mon, int x, int align, char *ch, int draw_image)
     fill_rect(mon->cr, PAL_BG, x, by, ch_width, bh);
 
     if (draw_image && img != NULL) {
-      cairo_set_source_surface(mon->cr, img, x, 0);
-      cairo_mask_surface(mon->cr, img, x, 0);
-      //cairo_surface_destroy(img);
+        cairo_set_source_surface(mon->cr, img, x, 0);
+        cairo_mask_surface(mon->cr, img, x, 0);
+        //cairo_surface_destroy(img);
     } else {
-      /* String baseline coordinates */
-      cairo_move_to(mon->cr, x, bh / 2 + ext.height / 2 - ext.descent);
-      cairo_set_color(mon->cr, PAL_FG);
-      cairo_show_text(mon->cr, ch);
+        /* String baseline coordinates */
+        cairo_move_to(mon->cr, x, bh / 2 + ext.height / 2 - ext.descent);
+        cairo_set_color(mon->cr, PAL_FG);
+        cairo_show_text(mon->cr, ch);
     }
 
     /* We can render both at the same time */
@@ -197,7 +197,7 @@ draw_char (monitor_t *mon, int x, int align, char *ch, int draw_image)
     return ch_width; 
 }
 
-uint32_t
+    uint32_t
 parse_color (const char *str, char **end, const uint32_t def)
 {
     xcb_alloc_named_color_reply_t *nc_reply;
@@ -242,7 +242,7 @@ parse_color (const char *str, char **end, const uint32_t def)
     return ret;
 }
 
-void
+    void
 convert_color (const uint32_t col, color_t *out) 
 {
     out->b = ((col >> 0)&0xff) / 255.0;
@@ -252,7 +252,7 @@ convert_color (const uint32_t col, color_t *out)
     out->a = 1.0;
 }
 
-void
+    void
 set_attribute (const char modifier, const char attribute)
 {
     int pos = indexof(attribute, "ou");
@@ -270,7 +270,7 @@ set_attribute (const char modifier, const char attribute)
 }
 
 
-area_t *
+    area_t *
 area_get (xcb_window_t win, const int x)
 {
     for (int i = 0; i < astack.pos; i++)
@@ -279,7 +279,7 @@ area_get (xcb_window_t win, const int x)
     return NULL;
 }
 
-void
+    void
 area_shift (xcb_window_t win, const int align, int delta)
 {
     if (align == ALIGN_L)
@@ -319,13 +319,13 @@ bool get_image_file(char *str, char *optend, char **end)
 
     /* Check if the image exists. */
     if (access(img_file, F_OK) == -1) {
-      return false;
+        return false;
     }
 
     return true;
 }
 
-bool
+    bool
 area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x, const int align, const int button)
 {
     char *p = str;
@@ -388,7 +388,7 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
     return true;
 }
 
-void
+    void
 parse (char *text)
 {
     monitor_t *cur_mon;
@@ -462,8 +462,8 @@ parse (char *text)
                               { cur_mon = montail ? montail : monhead; }
                               else if (isdigit(*p))
                               { cur_mon = monhead;
-                                for (int i = 0; i != *p-'0' && cur_mon->next; i++)
-                                    cur_mon = cur_mon->next;
+                                  for (int i = 0; i != *p-'0' && cur_mon->next; i++)
+                                      cur_mon = cur_mon->next;
                               }
                               else
                               { p++; continue; }
@@ -472,37 +472,37 @@ parse (char *text)
                               pos_x = 0;
                               break;
 
-                    /* In case of error keep parsing after the closing } */
-                    default:
-                        p = end;
-                }
+                              /* In case of error keep parsing after the closing } */
+                default:
+                              p = end;
             }
-            /* Eat the trailing } */
-            p++;
-        } else {
-            const int utf8_size[] = {
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0xC0-0xCF
-                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0xD0-0xDF
-                3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // 0xE0-0xEF
-                4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, // 0xF0-0xFF
-            };
-            int size = ((uint8_t)p[0]&0x80) ? utf8_size[(uint8_t)p[0]^0x80] : 1;
-                    
-            char tmp[size];
-            for (int i = 0; i < size; i++)
-                tmp[i] = *p++;
-            tmp[size] = '\0';
-
-            int w = draw_char(cur_mon, pos_x, align, tmp, char_is_image);
-
-            pos_x += w;
-            area_shift(cur_mon->window, align, w);
         }
-    }
+        /* Eat the trailing } */
+        p++;
+} else {
+    const int utf8_size[] = {
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0xC0-0xCF
+        2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0xD0-0xDF
+        3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // 0xE0-0xEF
+        4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, // 0xF0-0xFF
+    };
+    int size = ((uint8_t)p[0]&0x80) ? utf8_size[(uint8_t)p[0]^0x80] : 1;
+
+    char tmp[size];
+    for (int i = 0; i < size; i++)
+        tmp[i] = *p++;
+    tmp[size] = '\0';
+
+    int w = draw_char(cur_mon, pos_x, align, tmp, char_is_image);
+
+    pos_x += w;
+    area_shift(cur_mon->window, align, w);
+}
+}
 }
 
 enum {
@@ -516,7 +516,7 @@ enum {
     NET_WM_STATE_ABOVE,
 };
 
-void
+    void
 set_ewmh_atoms (void)
 {
     const char *atom_names[] = {
@@ -569,7 +569,7 @@ set_ewmh_atoms (void)
     }
 }
 
-monitor_t *
+    monitor_t *
 monitor_new (int x, int y, int width, int height)
 {
     monitor_t *ret;
@@ -605,7 +605,7 @@ monitor_new (int x, int y, int width, int height)
     return ret;
 }
 
-void
+    void
 monitor_add (monitor_t *mon)
 {
     if (!monhead) {
@@ -621,7 +621,7 @@ monitor_add (monitor_t *mon)
     }
 }
 
-int
+    int
 rect_sort_cb (const void *p1, const void *p2)
 {
     const xcb_rectangle_t *r1 = (xcb_rectangle_t *)p1;
@@ -635,7 +635,7 @@ rect_sort_cb (const void *p1, const void *p2)
     return 0;
 }
 
-void
+    void
 monitor_create_chain (xcb_rectangle_t *rects, const int num)
 {
     int i;
@@ -651,7 +651,7 @@ monitor_create_chain (xcb_rectangle_t *rects, const int num)
         width += rects[i].width;
         /* Get height of screen from y_offset + height of lowest monitor */
         if (h >= height)
-        height = h;
+            height = h;
     }
 
     if (bw < 0)
@@ -694,7 +694,7 @@ monitor_create_chain (xcb_rectangle_t *rects, const int num)
     }
 }
 
-void
+    void
 get_randr_monitors (void)
 {
     xcb_randr_get_screen_resources_current_reply_t *rres_reply;
@@ -765,7 +765,7 @@ get_randr_monitors (void)
 
             if (i != j && rects[j].width) {
                 if (rects[j].x >= rects[i].x && rects[j].x + rects[j].width <= rects[i].x + rects[i].width &&
-                    rects[j].y >= rects[i].y && rects[j].y + rects[j].height <= rects[i].y + rects[i].height) {
+                        rects[j].y >= rects[i].y && rects[j].y + rects[j].height <= rects[i].y + rects[i].height) {
                     rects[j].width = 0;
                     valid--;
                 }
@@ -787,7 +787,7 @@ get_randr_monitors (void)
     monitor_create_chain(r, valid);
 }
 
-void
+    void
 get_xinerama_monitors (void)
 {
     xcb_xinerama_query_screens_reply_t *xqs_reply;
@@ -816,7 +816,7 @@ get_xinerama_monitors (void)
     monitor_create_chain(rects, screens);
 }
 
-xcb_visualtype_t *
+    xcb_visualtype_t *
 get_visual_type (void)
 {
     xcb_depth_iterator_t iter;
@@ -848,7 +848,7 @@ get_visual_type (void)
     return NULL;
 }
 
-void
+    void
 xconn (void)
 {
     /* Connect to X */
@@ -868,7 +868,7 @@ xconn (void)
     xcb_create_colormap(c, XCB_COLORMAP_ALLOC_NONE, colormap, scr->root, vt->visual_id);
 }
 
-void
+    void
 init (void)
 {
     /* To make the alignment uniform */
@@ -934,7 +934,7 @@ init (void)
     xcb_flush(c);
 }
 
-void
+    void
 cleanup (void)
 {
     while (monhead) {
@@ -952,7 +952,7 @@ cleanup (void)
         xcb_disconnect(c);
 }
 
-void
+    void
 sighandle (int signal)
 {
     if (signal == SIGINT || signal == SIGTERM)
@@ -960,7 +960,7 @@ sighandle (int signal)
 }
 
 /* Parse an X-styled geometry string, we don't support signed offsets tho. */
-bool
+    bool
 parse_geometry_string (char *str, int *tmp)
 {
     char *p = str;
@@ -1010,7 +1010,7 @@ parse_geometry_string (char *str, int *tmp)
     return true;
 }
 
-void
+    void
 parse_font_list (char *str)
 {
     char *tok;
@@ -1025,7 +1025,7 @@ parse_font_list (char *str)
     return;
 }
 
-int
+    int
 main (int argc, char **argv)
 {
     struct pollfd pollin[2] = {
