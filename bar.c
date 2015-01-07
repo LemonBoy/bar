@@ -281,6 +281,11 @@ bool get_image_file(char *str, char *optend, char **end)
     img_file = p;
     *end = trail + 1;
 
+    /* Check if the image exists. */
+    if (access(img_file, F_OK) == -1) {
+      return false;
+    }
+
     return true;
 }
 
