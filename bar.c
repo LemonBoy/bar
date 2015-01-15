@@ -251,13 +251,12 @@ area_shift (xcb_window_t win, const int align, int delta)
 bool
 area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x, const int align, const int button)
 {
-    char *p = str;
     char *trail;
     area_t *a;
 
     // A wild close area tag appeared!
-    if (*p != ':') {
-        *end = p;
+    if (*str != ':') {
+        *end = str;
 
         /* Find most recent unclosed area. */
         int i;
@@ -297,19 +296,19 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
     a = &astack.slot[astack.pos++];
 
     // Found the closing : and check if it's just an escaped one
-    for (trail = strchr(++p, ':'); trail && trail[-1] == '\\'; trail = strchr(trail + 1, ':'))
+    for (trail = strchr(++str, ':'); trail && trail[-1] == '\\'; trail = strchr(trail + 1, ':'))
         ;
 
     // Find the trailing : and make sure it's within the formatting block, also reject empty commands
-    if (!trail || p == trail || trail > optend) {
-        *end = p;
+    if (!trail || str == trail || trail > optend) {
+        *end = str;
         return false;
     }
 
     *trail = '\0';
 
     // Sanitize the user command by unescaping all the :
-    for (char *needle = p; *needle; needle++) {
+    for (char *needle = str; *needle; needle++) {
         int delta = trail - &needle[1];
         if (needle[0] == '\\' && needle[1] == ':') {
             memmove(&needle[0], &needle[1], delta);
@@ -318,7 +317,7 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
     }
 
     // This is a pointer to the string buffer allocated in the main
-    a->cmd = p;
+    a->cmd = str;
     a->active = true;
     a->align = align;
     a->begin = x;
