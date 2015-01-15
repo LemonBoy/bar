@@ -300,7 +300,7 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
     for (trail = strchr(++p, ':'); trail && trail[-1] == '\\'; trail = strchr(trail + 1, ':'))
         ;
 
-    // Find the trailing : and make sure it's whitin the formatting block, also reject empty commands
+    // Find the trailing : and make sure it's within the formatting block, also reject empty commands
     if (!trail || p == trail || trail > optend) {
         *end = p;
         return false;
