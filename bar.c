@@ -251,6 +251,7 @@ area_shift (xcb_window_t win, const int align, int delta)
 bool
 area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x, const int align, const int button)
 {
+    int i;
     char *trail;
     area_t *a;
 
@@ -259,7 +260,6 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
         *end = str;
 
         /* Find most recent unclosed area. */
-        int i;
         for (i = astack.pos - 1; i >= 0 && !astack.slot[i].active; i--)
             ;
         a = &astack.slot[i];
