@@ -77,6 +77,8 @@ static monitor_t *monhead, *montail;
 static font_t *font_list[MAX_FONT_COUNT];
 static char *font_names[MAX_FONT_COUNT];
 static font_t *font_cache[FONT_CACHE_SIZE];
+static int font_count = 0;
+static int font_index = -1;
 static uint32_t attrs = 0;
 static bool dock = false;
 static bool topbar = true;
@@ -320,17 +322,27 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
     return true;
 }
 
+bool
+font_has_glyph (font_t *font, const uint16_t c)
+{
+    return c >= font->char_min && c <= font->char_max &&
+        font->width_lut[c - font->char_min].character_width != 0;
+}
+
 /* returns NULL if character cannot be printed */
 font_t *
 select_drawable_font (const uint16_t c)
 {
+    /* If the user has specified a font to use, try that first. */
+    if (font_index != -1 && font_has_glyph(font_list[font_index - 1], c))
+        return font_list[font_index - 1];
+
     /* if the end is reached without finding an apropriate font, return NULL.
      * If the font can draw the character, return it.
      */
     for (int i = 0; font_list[i] != NULL; i++) {
         font_t *font = font_list[i];
-        if (c >= font->char_min && c <= font->char_max &&
-                font->width_lut[c - font->char_min].character_width != 0)
+        if (font_has_glyph(font, c))
             return font;
     }
     return NULL;
@@ -420,6 +432,13 @@ parse (char *text)
 
                               p++;
                               pos_x = 0;
+                              break;
+
+                    case 'T':
+                              font_index = (int)strtoul(p, NULL, 10);
+                              if (!font_index || font_index >= font_count)
+                                  font_index = -1;
+                              p = end;
                               break;
 
                     /* In case of error keep parsing after the closing } */
@@ -851,12 +870,15 @@ init (void)
     /* Load the fonts */
     for (int i = 0; font_names[i]; i++) {
         font_list[i] = font_load(font_names[i]);
+        font_count++;
         if (!font_list[i])
             exit(EXIT_FAILURE);
     }
 
-    if (!font_list[0])
+    if (!font_list[0]) {
         font_list[0] = font_load("fixed");
+        font_count++;
+    }
 
     if (!font_list[0])
         exit(EXIT_FAILURE);
@@ -1141,7 +1163,7 @@ main (int argc, char **argv)
 
                     switch (ev->response_type & 0x7F) {
                         case XCB_EXPOSE:
-                            if (expose_ev->count == 0) 
+                            if (expose_ev->count == 0)
                                 redraw = true;
                             break;
                         case XCB_BUTTON_PRESS:
@@ -1150,8 +1172,8 @@ main (int argc, char **argv)
                                 area_t *area = area_get(press_ev->event, press_ev->event_x);
                                 /* Respond to the click */
                                 if (area && area->button == press_ev->detail) {
-                                    write(STDOUT_FILENO, area->cmd, strlen(area->cmd)); 
-                                    write(STDOUT_FILENO, "\n", 1); 
+                                    write(STDOUT_FILENO, area->cmd, strlen(area->cmd));
+                                    write(STDOUT_FILENO, "\n", 1);
                                 }
                             }
                             break;
