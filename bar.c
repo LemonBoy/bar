@@ -65,8 +65,6 @@ enum {
 };
 
 #define MAX_FONT_COUNT 5
-/* 0 <= FONT_CACHE_SIZE <= 65536 */
-#define FONT_CACHE_SIZE 256
 
 static xcb_connection_t *c;
 static xcb_screen_t *scr;
@@ -75,15 +73,13 @@ static xcb_visualid_t visual;
 static xcb_colormap_t colormap;
 static monitor_t *monhead, *montail;
 static font_t *font_list[MAX_FONT_COUNT];
-static char *font_names[MAX_FONT_COUNT];
-static font_t *font_cache[FONT_CACHE_SIZE];
 static int font_count = 0;
 static int font_index = -1;
 static uint32_t attrs = 0;
 static bool dock = false;
 static bool topbar = true;
 static int bw = -1, bh = -1, bx = 0, by = 0;
-static int bu = 1; /* Underline height */
+static int bu = 1; // Underline height
 static uint32_t fgc, bgc, ugc;
 static uint32_t dfgc, dbgc;
 static area_stack_t astack;
@@ -120,16 +116,16 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
             break;
     }
 
-    /* Draw the background first */
+    // Draw the background first
     fill_rect(mon->pixmap, gc[GC_CLEAR], x, by, ch_width, bh);
 
-    /* xcb accepts string in UCS-2 BE, so swap */
+    // xcb accepts string in UCS-2 BE, so swap
     ch = (ch >> 8) | (ch << 8);
 
-    /* String baseline coordinates */
+    // String baseline coordinates
     xcb_image_text_16(c, 1, mon->pixmap, gc[GC_DRAW], x, bh / 2 + cur_font->height / 2 - cur_font->descent, (xcb_char2b_t *)&ch);
 
-    /* We can render both at the same time */
+    // We can render both at the same time
     if (attrs & ATTR_OVERL)
         fill_rect(mon->pixmap, gc[GC_ATTR], x, 0, ch_width, bu);
     if (attrs & ATTR_UNDERL)
@@ -148,23 +144,23 @@ parse_color (const char *str, char **end, const uint32_t def)
     if (!str)
         return def;
 
-    /* Reset */
+    // Reset
     if (str[0] == '-') {
         if (end)
             *end = (char *)str + 1;
         return def;
     }
 
-    /* Hex representation */
+    // Hex representation
     if (str[0] == '#') {
         errno = 0;
         uint32_t tmp = strtoul(str + 1, end, 16);
 
-        /* Some error checking is definitely good */
+        // Some error checking is definitely good
         if (errno)
             tmp = def;
 
-        /* Xorg uses colors with premultiplied alpha */
+        // Xorg uses colors with premultiplied alpha
         unsigned int a = (tmp&0xff000000) >> 24;
         unsigned int r = (tmp&0x00ff0000) >> 16;
         unsigned int g = (tmp&0x0000ff00) >> 8;
@@ -175,7 +171,7 @@ parse_color (const char *str, char **end, const uint32_t def)
             g = (g * a) / 255;
             b = (b * a) / 255;
 
-            /* Clamp on overflow */
+            // Clamp on overflow
             if (r > 255) r = 255;
             if (g > 255) g = 255;
             if (b > 255) b = 255;
@@ -185,7 +181,7 @@ parse_color (const char *str, char **end, const uint32_t def)
         return a << 24 | r << 16 | g << 8 | b;
     }
 
-    /* Actual color name, resolve it */
+    // Actual color name, resolve it
     str_len = 0;
     while (isalpha(str[str_len]))
         str_len++;
@@ -259,11 +255,11 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
         return false;
     }
 
-    /* A wild close area tag appeared! */
+    // A wild close area tag appeared!
     if (*p != ':') {
         *end = p;
 
-        /* Basic safety checks */
+        // Basic safety checks
         if (!a->cmd || a->align != align || a->window != mon->window)
             return false;
 
@@ -278,7 +274,7 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
                 a->end = a->begin + size;
                 break;
             case ALIGN_R:
-                /* The newest is the rightmost one */
+                // The newest is the rightmost one
                 a->begin = mon->width - size;
                 a->end = mon->width;
                 break;
@@ -289,11 +285,11 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
         return true;
     }
 
-    /* Found the closing : and check if it's just an escaped one */
+    // Found the closing : and check if it's just an escaped one
     for (trail = strchr(++p, ':'); trail && trail[-1] == '\\'; trail = strchr(trail + 1, ':'))
         ;
 
-    /* Find the trailing : and make sure it's whitin the formatting block, also reject empty commands */
+    // Find the trailing : and make sure it's whitin the formatting block, also reject empty commands
     if (!trail || p == trail || trail > optend) {
         *end = p;
         return false;
@@ -301,7 +297,7 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
 
     *trail = '\0';
 
-    /* Sanitize the user command by unescaping all the : */
+    // Sanitize the user command by unescaping all the :
     for (char *needle = p; *needle; needle++) {
         int delta = trail - &needle[1];
         if (needle[0] == '\\' && needle[1] == ':') {
@@ -310,7 +306,7 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
         }
     }
 
-    /* This is a pointer to the string buffer allocated in the main */
+    // This is a pointer to the string buffer allocated in the main
     a->cmd = p;
     a->align = align;
     a->begin = x;
@@ -325,37 +321,27 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
 bool
 font_has_glyph (font_t *font, const uint16_t c)
 {
-    return c >= font->char_min && c <= font->char_max &&
-        font->width_lut[c - font->char_min].character_width != 0;
+    return (c >= font->char_min &&
+            c <= font->char_max &&
+            font->width_lut &&
+            font->width_lut[c - font->char_min].character_width);
 }
 
-/* returns NULL if character cannot be printed */
+// returns NULL if character cannot be printed
 font_t *
 select_drawable_font (const uint16_t c)
 {
-    /* If the user has specified a font to use, try that first. */
+    // If the user has specified a font to use, try that first.
     if (font_index != -1 && font_has_glyph(font_list[font_index - 1], c))
         return font_list[font_index - 1];
 
-    /* if the end is reached without finding an apropriate font, return NULL.
-     * If the font can draw the character, return it.
-     */
-    for (int i = 0; font_list[i] != NULL; i++) {
-        font_t *font = font_list[i];
-        if (font_has_glyph(font, c))
-            return font;
+    // If the end is reached without finding an apropriate font, return NULL.
+    // If the font can draw the character, return it.
+    for (int i = 0; i < font_count; i++) {
+        if (font_has_glyph(font_list[i], c))
+            return font_list[i];
     }
     return NULL;
-}
-
-/* returns NULL if character cannot be printed */
-font_t *
-select_drawable_font_cache (uint16_t c)
-{
-    if (c < FONT_CACHE_SIZE)
-        return font_cache[c];
-    else
-        return select_drawable_font(c);
 }
 
 void
@@ -403,7 +389,7 @@ parse (char *text)
 
                     case 'A':
                               button = XCB_BUTTON_INDEX_1;
-                              /* The range is 1-5 */
+                              // The range is 1-5
                               if (isdigit(*p) && (*p > '0' && *p < '6'))
                                   button = *p++ - '0';
                               area_add(p, end, &p, cur_mon, pos_x, align, button);
@@ -441,30 +427,49 @@ parse (char *text)
                               p = end;
                               break;
 
-                    /* In case of error keep parsing after the closing } */
+                    // In case of error keep parsing after the closing }
                     default:
                         p = end;
                 }
             }
-            /* Eat the trailing } */
+            // Eat the trailing }
             p++;
-        } else { /* utf-8 -> ucs-2 */
+        } else { // utf-8 -> ucs-2
             uint8_t *utf = (uint8_t *)p;
             uint16_t ucs;
 
+            // ASCII
             if (utf[0] < 0x80) {
                 ucs = utf[0];
                 p  += 1;
             }
+            // Two byte utf8 sequence
             else if ((utf[0] & 0xe0) == 0xc0) {
                 ucs = (utf[0] & 0x1f) << 6 | (utf[1] & 0x3f);
                 p += 2;
             }
+            // Three byte utf8 sequence
             else if ((utf[0] & 0xf0) == 0xe0) {
                 ucs = (utf[0] & 0xf) << 12 | (utf[1] & 0x3f) << 6 | (utf[2] & 0x3f);
                 p += 3;
             }
-            else { /* Handle ascii > 0x80 */
+            // Four byte utf8 sequence
+            else if ((utf[0] & 0xf8) == 0xf0) {
+                ucs = 0xfffd;
+                p += 4;
+            }
+            // Five byte utf8 sequence
+            else if ((utf[0] & 0xfc) == 0xf8) {
+                ucs = 0xfffd;
+                p += 5;
+            }
+            // Siz byte utf8 sequence
+            else if ((utf[0] & 0xfe) == 0xfc) {
+                ucs = 0xfffd;
+                p += 6;
+            }
+            // Not a valid utf-8 sequence
+            else {
                 ucs = utf[0];
                 p += 1;
             }
@@ -512,7 +517,15 @@ font_load (const char *str)
     ret->height = font_info->font_ascent + font_info->font_descent;
     ret->char_max = font_info->max_byte1 << 8 | font_info->max_char_or_byte2;
     ret->char_min = font_info->min_byte1 << 8 | font_info->min_char_or_byte2;
-    ret->width_lut = xcb_query_font_char_infos(font_info);
+
+    // Copy over the width lut as it's part of font_info
+    int lut_size = sizeof(xcb_charinfo_t) * xcb_query_font_char_infos_length(font_info);
+    if (lut_size) {
+        ret->width_lut = malloc(lut_size);
+        memcpy(ret->width_lut, xcb_query_font_char_infos(font_info), lut_size);
+    }
+
+    free(font_info);
 
     return ret;
 }
@@ -538,7 +551,7 @@ set_ewmh_atoms (void)
         "_NET_WM_STRUT_PARTIAL",
         "_NET_WM_STRUT",
         "_NET_WM_STATE",
-        /* Leave those at the end since are batch-set */
+        // Leave those at the end since are batch-set
         "_NET_WM_STATE_STICKY",
         "_NET_WM_STATE_ABOVE",
     };
@@ -547,8 +560,8 @@ set_ewmh_atoms (void)
     xcb_atom_t atom_list[atoms];
     xcb_intern_atom_reply_t *atom_reply;
 
-    /* As suggested fetch all the cookies first (yum!) and then retrieve the
-     * atoms to exploit the async'ness */
+    // As suggested fetch all the cookies first (yum!) and then retrieve the
+    // atoms to exploit the async'ness
     for (int i = 0; i < atoms; i++)
         atom_cookie[i] = xcb_intern_atom(c, 0, strlen(atom_names[i]), atom_names[i]);
 
@@ -560,7 +573,7 @@ set_ewmh_atoms (void)
         free(atom_reply);
     }
 
-    /* Prepare the strut array */
+    // Prepare the strut array
     for (monitor_t *mon = monhead; mon; mon = mon->next) {
         int strut[12] = {0};
         if (topbar) {
@@ -649,14 +662,14 @@ monitor_create_chain (xcb_rectangle_t *rects, const int num)
     int width = 0, height = 0;
     int left = bx;
 
-    /* Sort before use */
+    // Sort before use
     qsort(rects, num, sizeof(xcb_rectangle_t), rect_sort_cb);
 
     for (i = 0; i < num; i++) {
         int h = rects[i].y + rects[i].height;
-        /* Accumulated width of all monitors */
+        // Accumulated width of all monitors
         width += rects[i].width;
-        /* Get height of screen from y_offset + height of lowest monitor */
+        // Get height of screen from y_offset + height of lowest monitor
         if (h >= height)
         height = h;
     }
@@ -664,16 +677,17 @@ monitor_create_chain (xcb_rectangle_t *rects, const int num)
     if (bw < 0)
         bw = width - bx;
 
+    // Use the first font height as all the font heights have been set to the biggest of the set
     if (bh < 0 || bh > height)
         bh = font_list[0]->height + bu + 2;
 
-    /* Check the geometry */
+    // Check the geometry
     if (bx + bw > width || by + bh > height) {
         fprintf(stderr, "The geometry specified doesn't fit the screen!\n");
         exit(EXIT_FAILURE);
     }
 
-    /* Left is a positive number or zero therefore monitors with zero width are excluded */
+    // Left is a positive number or zero therefore monitors with zero width are excluded
     width = bw;
     for (i = 0; i < num; i++) {
         if (rects[i].y + rects[i].height < by)
@@ -689,7 +703,7 @@ monitor_create_chain (xcb_rectangle_t *rects, const int num)
 
             width -= rects[i].width - left;
 
-            /* No need to check for other monitors */
+            // No need to check for other monitors
             if (width <= 0)
                 break;
         }
@@ -720,7 +734,7 @@ get_randr_monitors (void)
     outputs = xcb_randr_get_screen_resources_current_outputs(rres_reply);
 
 
-    /* There should be at least one output */
+    // There should be at least one output
     if (num < 1) {
         free(rres_reply);
         return;
@@ -728,15 +742,16 @@ get_randr_monitors (void)
 
     xcb_rectangle_t rects[num];
 
-    /* Get all outputs */
+    // Get all outputs
     for (i = 0; i < num; i++) {
         xcb_randr_get_output_info_reply_t *oi_reply;
         xcb_randr_get_crtc_info_reply_t *ci_reply;
 
         oi_reply = xcb_randr_get_output_info_reply(c, xcb_randr_get_output_info(c, outputs[i], XCB_CURRENT_TIME), NULL);
 
-        /* Output disconnected or not attached to any CRTC ? */
+        // Output disconnected or not attached to any CRTC ?
         if (!oi_reply || oi_reply->crtc == XCB_NONE || oi_reply->connection != XCB_RANDR_CONNECTION_CONNECTED) {
+            free(oi_reply);
             rects[i].width = 0;
             continue;
         }
@@ -752,7 +767,7 @@ get_randr_monitors (void)
             return;
         }
 
-        /* There's no need to handle rotated screens here (see #69) */
+        // There's no need to handle rotated screens here (see #69)
         rects[i] = (xcb_rectangle_t){ ci_reply->x, ci_reply->y, ci_reply->width, ci_reply->height };
 
         free(ci_reply);
@@ -762,13 +777,13 @@ get_randr_monitors (void)
 
     free(rres_reply);
 
-    /* Check for clones and inactive outputs */
+    // Check for clones and inactive outputs
     for (i = 0; i < num; i++) {
         if (rects[i].width == 0)
             continue;
 
         for (j = 0; j < num; j++) {
-            /* Does I countain J ? */
+            // Does I countain J ?
 
             if (i != j && rects[j].width) {
                 if (rects[j].x >= rects[i].x && rects[j].x + rects[j].width <= rects[i].x + rects[i].width &&
@@ -809,7 +824,7 @@ get_xinerama_monitors (void)
 
     xcb_rectangle_t rects[screens];
 
-    /* Fetch all the screens first */
+    // Fetch all the screens first
     for (int i = 0; iter.rem; i++) {
         rects[i].x = iter.data->x_org;
         rects[i].y = iter.data->y_org;
@@ -830,7 +845,7 @@ get_visual (void)
 
     iter = xcb_screen_allowed_depths_iterator(scr);
 
-    /* Try to find a RGBA visual */
+    // Try to find a RGBA visual
     while (iter.rem) {
         xcb_visualtype_t *vis = xcb_depth_visuals(iter.data);
 
@@ -840,24 +855,104 @@ get_visual (void)
         xcb_depth_next(&iter);
     }
 
-    /* Fallback to the default one */
+    // Fallback to the default one
     return scr->root_visual;
 }
+
+// Parse an X-styled geometry string, we don't support signed offsets tho.
+bool
+parse_geometry_string (char *str, int *tmp)
+{
+    char *p = str;
+    int i = 0, j;
+
+    if (!str || !str[0])
+        return false;
+
+    // The leading = is optional
+    if (*p == '=')
+        p++;
+
+    while (*p) {
+        // A geometry string has only 4 fields
+        if (i >= 4) {
+            fprintf(stderr, "Invalid geometry specified\n");
+            return false;
+        }
+        // Move on if we encounter a 'x' or '+'
+        if (*p == 'x') {
+            if (i > 0) // The 'x' must precede '+'
+                break;
+            i++; p++; continue;
+        }
+        if (*p == '+') {
+            if (i < 1) // Stray '+', skip the first two fields
+                i = 2;
+            else
+                i++;
+            p++; continue;
+        }
+        // A digit must follow
+        if (!isdigit(*p)) {
+            fprintf(stderr, "Invalid geometry specified\n");
+            return false;
+        }
+        // Try to parse the number
+        errno = 0;
+        j = strtoul(p, &p, 10);
+        if (errno) {
+            fprintf(stderr, "Invalid geometry specified\n");
+            return false;
+        }
+        tmp[i] = j;
+    }
+
+    return true;
+}
+
+void
+parse_font_list (char *str)
+{
+    char *tok;
+
+    if (!str)
+        return;
+
+    tok = strtok(str, ",");
+
+    while (tok) {
+        if (font_count > MAX_FONT_COUNT - 1) {
+            fprintf(stderr, "Too many fonts; maximum %i\n", MAX_FONT_COUNT);
+            return;
+        }
+
+        // Load the selected font
+        font_t *font = font_load(tok);
+        if (font)
+            font_list[font_count++] = font;
+        else
+            fprintf(stderr, "Could not load font \"%s\"...skipping\n", tok);
+
+        tok = strtok(NULL, ",");
+    }
+}
+
+
 
 void
 xconn (void)
 {
-    /* Connect to X */
+    // Connect to X
     c = xcb_connect (NULL, NULL);
     if (xcb_connection_has_error(c)) {
         fprintf(stderr, "Couldn't connect to X\n");
         exit(EXIT_FAILURE);
     }
 
-    /* Grab infos from the first screen */
+    // Grab infos from the first screen
     scr = xcb_setup_roots_iterator(xcb_get_setup(c)).data;
 
-    /* Try to get a RGBA visual and build the colormap for that */
+    // Try to get a RGBA visual and build the colormap for that
     visual = get_visual();
 
     colormap = xcb_generate_id(c);
@@ -867,41 +962,34 @@ xconn (void)
 void
 init (void)
 {
-    /* Load the fonts */
-    for (int i = 0; font_names[i]; i++) {
-        font_list[i] = font_load(font_names[i]);
-        font_count++;
-        if (!font_list[i])
-            exit(EXIT_FAILURE);
-    }
+    // This has to be declared as an array because otherwise the compiler would turn it into a const
+    // string, making strtok choke very hard on this
+    char fallback_font[] = "fixed";
 
-    if (!font_list[0]) {
-        font_list[0] = font_load("fixed");
-        font_count++;
-    }
+    // Try to load a default font
+    if (!font_count)
+        parse_font_list(fallback_font);
 
-    if (!font_list[0])
+    // We tried and failed hard, there's something wrong
+    if (!font_count)
         exit(EXIT_FAILURE);
 
-    for (uint16_t i = 0; i < FONT_CACHE_SIZE; i++)
-        font_cache[i] = select_drawable_font(i);
-
-    /* To make the alignment uniform, find maximum height */
+    // To make the alignment uniform, find maximum height
     int maxh = font_list[0]->height;
-    for (int i = 1; font_list[i]; i++)
+    for (int i = 1; i < font_count; i++)
         maxh = max(maxh, font_list[i]->height);
 
-    /* Set maximum height to all fonts */
-    for (int i = 0; font_list[i]; i++)
+    // Set maximum height to all fonts
+    for (int i = 0; i < font_count; i++)
         font_list[i]->height = maxh;
 
-    /* Generate a list of screens */
+    // Generate a list of screens
     const xcb_query_extension_reply_t *qe_reply;
 
-    /* Initialiaze monitor list head and tail */
+    // Initialiaze monitor list head and tail
     monhead = montail = NULL;
 
-    /* Check if RandR is present */
+    // Check if RandR is present
     qe_reply = xcb_get_extension_data(c, &xcb_randr_id);
 
     if (qe_reply && qe_reply->present) {
@@ -909,7 +997,7 @@ init (void)
     } else {
         qe_reply = xcb_get_extension_data(c, &xcb_xinerama_id);
 
-        /* Check if Xinerama extension is present and active */
+        // Check if Xinerama extension is present and active
         if (qe_reply && qe_reply->present) {
             xcb_xinerama_is_active_reply_t *xia_reply;
             xia_reply = xcb_xinerama_is_active_reply(c, xcb_xinerama_is_active(c), NULL);
@@ -922,31 +1010,31 @@ init (void)
     }
 
     if (!monhead) {
-        /* If I fits I sits */
+        // If I fits I sits
         if (bw < 0)
             bw = scr->width_in_pixels - bx;
 
-        /* Adjust the height */
+        // Adjust the height
         if (bh < 0 || bh > scr->height_in_pixels)
             bh = maxh + bu + 2;
 
-        /* Check the geometry */
+        // Check the geometry
         if (bx + bw > scr->width_in_pixels || by + bh > scr->height_in_pixels) {
             fprintf(stderr, "The geometry specified doesn't fit the screen!\n");
             exit(EXIT_FAILURE);
         }
 
-        /* If no RandR outputs or Xinerama screens, fall back to using whole screen */
+        // If no RandR outputs or Xinerama screens, fall back to using whole screen
         monhead = monitor_new(0, 0, bw, scr->height_in_pixels);
     }
 
     if (!monhead)
         exit(EXIT_FAILURE);
 
-    /* For WM that support EWMH atoms */
+    // For WM that support EWMH atoms
     set_ewmh_atoms();
 
-    /* Create the gc for drawing */
+    // Create the gc for drawing
     gc[GC_DRAW] = xcb_generate_id(c);
     xcb_create_gc(c, gc[GC_DRAW], monhead->pixmap, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND, (const uint32_t []){ fgc, bgc });
 
@@ -956,7 +1044,7 @@ init (void)
     gc[GC_ATTR] = xcb_generate_id(c);
     xcb_create_gc(c, gc[GC_ATTR], monhead->pixmap, XCB_GC_FOREGROUND, (const uint32_t []){ ugc });
 
-    /* Make the bar visible and clear the pixmap */
+    // Make the bar visible and clear the pixmap
     for (monitor_t *mon = monhead; mon; mon = mon->next) {
         fill_rect(mon->pixmap, gc[GC_CLEAR], 0, 0, mon->width, bh);
         xcb_map_window(c, mon->window);
@@ -968,10 +1056,10 @@ init (void)
 void
 cleanup (void)
 {
-    for (int i = 0; font_list[i]; i++) {
+    for (int i = 0; i < font_count; i++) {
         xcb_close_font(c, font_list[i]->ptr);
+        free(font_list[i]->width_lut);
         free(font_list[i]);
-        font_list[i] = NULL;
     }
 
     while (monhead) {
@@ -1001,78 +1089,6 @@ sighandle (int signal)
         exit(EXIT_SUCCESS);
 }
 
-/* Parse an X-styled geometry string, we don't support signed offsets tho. */
-bool
-parse_geometry_string (char *str, int *tmp)
-{
-    char *p = str;
-    int i = 0, j;
-
-    if (!str || !str[0])
-        return false;
-
-    /* The leading = is optional */
-    if (*p == '=')
-        p++;
-
-    while (*p) {
-        /* A geometry string has only 4 fields */
-        if (i >= 4) {
-            fprintf(stderr, "Invalid geometry specified\n");
-            return false;
-        }
-        /* Move on if we encounter a 'x' or '+' */
-        if (*p == 'x') {
-            if (i > 0) /* The 'x' must precede '+' */
-                break;
-            i++; p++; continue;
-        }
-        if (*p == '+') {
-            if (i < 1) /* Stray '+', skip the first two fields */
-                i = 2;
-            else
-                i++;
-            p++; continue;
-        }
-        /* A digit must follow */
-        if (!isdigit(*p)) {
-            fprintf(stderr, "Invalid geometry specified\n");
-            return false;
-        }
-        /* Try to parse the number */
-        errno = 0;
-        j = strtoul(p, &p, 10);
-        if (errno) {
-            fprintf(stderr, "Invalid geometry specified\n");
-            return false;
-        }
-        tmp[i] = j;
-    }
-
-    return true;
-}
-
-void
-parse_font_list (char *str)
-{
-    char *tok;
-
-    if (!str)
-        return;
-
-    tok = strtok(str, ",");
-
-    for (int i = 0; tok; i++) {
-        if (i >= MAX_FONT_COUNT) {
-            fprintf(stderr, "Too many fonts; maximum %i\n", MAX_FONT_COUNT);
-            return;
-        }
-
-        font_names[i] = tok;
-        tok = strtok(NULL, ",");
-    }
-}
-
 int
 main (int argc, char **argv)
 {
@@ -1087,15 +1103,15 @@ main (int argc, char **argv)
     bool permanent = false;
     int geom_v[4] = { -1, -1, 0, 0 };
 
-    /* Install the parachute! */
+    // Install the parachute!
     atexit(cleanup);
     signal(SIGINT, sighandle);
     signal(SIGTERM, sighandle);
 
-    /* Connect to the Xserver and initialize scr */
+    // Connect to the Xserver and initialize scr
     xconn();
 
-    /* B/W combo */
+    // B/W combo
     dbgc = bgc = parse_color("black", NULL, scr->black_pixel);
     dfgc = fgc = parse_color("white", NULL, scr->white_pixel);
 
@@ -1127,37 +1143,37 @@ main (int argc, char **argv)
         }
     }
 
-    /* Copy the geometry values in place */
+    // Copy the geometry values in place
     bw = geom_v[0];
     bh = geom_v[1];
     bx = geom_v[2];
     by = geom_v[3];
 
-    /* Do the heavy lifting */
+    // Do the heavy lifting
     init();
-    /* Get the fd to Xserver */
+    // Get the fd to Xserver
     pollin[1].fd = xcb_get_file_descriptor(c);
 
     for (;;) {
         bool redraw = false;
 
-        /* If connection is in error state, then it has been shut down. */
+        // If connection is in error state, then it has been shut down.
         if (xcb_connection_has_error(c))
             break;
 
         if (poll(pollin, 2, -1) > 0) {
-            if (pollin[0].revents & POLLHUP) {      /* No more data... */
-                if (permanent) pollin[0].fd = -1;   /* ...null the fd and continue polling :D */
-                else break;                         /* ...bail out */
+            if (pollin[0].revents & POLLHUP) {      // No more data...
+                if (permanent) pollin[0].fd = -1;   // ...null the fd and continue polling :D
+                else break;                         // ...bail out
             }
-            if (pollin[0].revents & POLLIN) { /* New input, process it */
+            if (pollin[0].revents & POLLIN) { // New input, process it
                 if (fgets(input, sizeof(input), stdin) == NULL)
-                    break; /* EOF received */
+                    break; // EOF received
 
                 parse(input);
                 redraw = true;
             }
-            if (pollin[1].revents & POLLIN) { /* Xserver broadcasted an event */
+            if (pollin[1].revents & POLLIN) { // Xserver broadcasted an event
                 while ((ev = xcb_poll_for_event(c))) {
                     expose_ev = (xcb_expose_event_t *)ev;
 
@@ -1170,7 +1186,7 @@ main (int argc, char **argv)
                             press_ev = (xcb_button_press_event_t *)ev;
                             {
                                 area_t *area = area_get(press_ev->event, press_ev->event_x);
-                                /* Respond to the click */
+                                // Respond to the click
                                 if (area && area->button == press_ev->detail) {
                                     write(STDOUT_FILENO, area->cmd, strlen(area->cmd));
                                     write(STDOUT_FILENO, "\n", 1);
@@ -1184,7 +1200,7 @@ main (int argc, char **argv)
             }
         }
 
-        if (redraw) { /* Copy our temporary pixmap onto the window */
+        if (redraw) { // Copy our temporary pixmap onto the window
             for (monitor_t *mon = monhead; mon; mon = mon->next) {
                 xcb_copy_area(c, mon->pixmap, mon->window, gc[GC_DRAW], 0, 0, 0, 0, mon->width, bh);
             }

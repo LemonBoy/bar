@@ -1,5 +1,4 @@
 CC	?= gcc
-STRIP ?= strip
 CFLAGS = -std=c99 -Os
 LDFLAGS = -lxcb -lxcb-xinerama -lxcb-randr
 CFDEBUG = -g3 -pedantic -Wall -Wunused-parameter -Wlong-long\
@@ -22,7 +21,6 @@ doc: README.pod
 
 ${EXEC}: ${OBJS}
 	${CC} -o ${EXEC} ${OBJS} ${LDFLAGS}
-	${STRIP} -s ${EXEC}
 
 debug: ${EXEC}
 debug: CC += ${CFDEBUG}
