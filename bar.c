@@ -65,6 +65,8 @@ enum {
 };
 
 #define MAX_FONT_COUNT 5
+#define WIN_TITLE "bar"
+#define WIN_TITLE_MAXLEN 128 /* should be enough for sane usage */
 
 static xcb_connection_t *c;
 static xcb_screen_t *scr;
@@ -591,6 +593,7 @@ set_ewmh_atoms (void)
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_DESKTOP], XCB_ATOM_CARDINAL, 32, 1, (const uint32_t []){ -1 } );
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_STRUT_PARTIAL], XCB_ATOM_CARDINAL, 32, 12, strut);
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_STRUT], XCB_ATOM_CARDINAL, 32, 4, strut);
+        xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8, strnlen(WIN_TITLE, WIN_TITLE_MAXLEN), WIN_TITLE);
     }
 }
 

@@ -1,6 +1,6 @@
 CC	?= gcc
-CFLAGS = -std=c99 -Os
-LDFLAGS = -lxcb -lxcb-xinerama -lxcb-randr
+CFLAGS += -std=c99 -Os
+LDFLAGS += -lxcb -lxcb-xinerama -lxcb-randr
 CFDEBUG = -g3 -pedantic -Wall -Wunused-parameter -Wlong-long\
 		  -Wsign-conversion -Wconversion -Wimplicit-function-declaration
 
