@@ -27,7 +27,7 @@ typedef struct font_t {
 } font_t;
 
 typedef struct monitor_t {
-    int x, width;
+    int x, y, width;
     xcb_window_t window;
     xcb_pixmap_t pixmap;
     struct monitor_t *prev, *next;
@@ -422,7 +422,9 @@ parse (char *text)
 
                     case 'T':
                               font_index = (int)strtoul(p, NULL, 10);
-                              if (!font_index || font_index >= font_count)
+                              // User-specified 'font_index' ∊ (0,font_count]
+                              // Otherwise just fallback to the automatic font selection
+                              if (!font_index || font_index > font_count)
                                   font_index = -1;
                               p = end;
                               break;
@@ -591,6 +593,7 @@ set_ewmh_atoms (void)
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_DESKTOP], XCB_ATOM_CARDINAL, 32, 1, (const uint32_t []){ -1 } );
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_STRUT_PARTIAL], XCB_ATOM_CARDINAL, 32, 12, strut);
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_STRUT], XCB_ATOM_CARDINAL, 32, 4, strut);
+        xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8, 3, "bar");
     }
 }
 
@@ -606,15 +609,14 @@ monitor_new (int x, int y, int width, int height)
     }
 
     ret->x = x;
+    ret->y = (topbar ? by : height - bh - by) + y;
     ret->width = width;
     ret->next = ret->prev = NULL;
-
-    int win_y = (topbar ? by : height - bh - by) + y;
     ret->window = xcb_generate_id(c);
 
     int depth = (visual == scr->root_visual) ? XCB_COPY_FROM_PARENT : 32;
     xcb_create_window(c, depth, ret->window, scr->root,
-            x, win_y, width, bh, 0,
+            ret->x, ret->y, width, bh, 0,
             XCB_WINDOW_CLASS_INPUT_OUTPUT, visual,
             XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP,
             (const uint32_t []){ bgc, bgc, dock, XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_BUTTON_PRESS, colormap });
@@ -800,11 +802,11 @@ get_randr_monitors (void)
         return;
     }
 
-	xcb_rectangle_t r[valid];
+    xcb_rectangle_t r[valid];
 
-	for (i = j = 0; i < num && j < valid; i++)
-		if (rects[i].width != 0)
-			r[j++] = rects[i];
+    for (i = j = 0; i < num && j < valid; i++)
+        if (rects[i].width != 0)
+            r[j++] = rects[i];
 
     monitor_create_chain(r, valid);
 }
@@ -1048,6 +1050,10 @@ init (void)
     for (monitor_t *mon = monhead; mon; mon = mon->next) {
         fill_rect(mon->pixmap, gc[GC_CLEAR], 0, 0, mon->width, bh);
         xcb_map_window(c, mon->window);
+
+        // Make sure that the window really gets in the place it's supposed to be
+        // Some WM such as Openbox need this
+        xcb_configure_window(c, mon->window, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, (const uint32_t []){ mon->x, mon->y });
     }
 
     xcb_flush(c);
