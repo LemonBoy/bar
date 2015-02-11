@@ -222,7 +222,7 @@ set_attribute (const char modifier, const char attribute)
 area_t *
 area_get (xcb_window_t win, const int btn, const int x)
 {
-    /* Looping backwards ensures that we get the innermost area first */
+    // Looping backwards ensures that we get the innermost area first
     for (int i = astack.pos; i >= 0; i--) {
         area_t *a = &astack.slot[i];
         if (a->window == win && a->button == btn
@@ -259,7 +259,7 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
     if (*str != ':') {
         *end = str;
 
-        /* Find most recent unclosed area. */
+        // Find most recent unclosed area.
         for (i = astack.pos - 1; i >= 0 && !astack.slot[i].active; i--)
             ;
         a = &astack.slot[i];
