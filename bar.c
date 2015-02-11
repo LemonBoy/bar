@@ -34,6 +34,7 @@ typedef struct monitor_t {
 } monitor_t;
 
 typedef struct area_t {
+    bool active;
     int begin, end, align, button;
     xcb_window_t window;
     char *cmd;
@@ -219,11 +220,15 @@ set_attribute (const char modifier, const char attribute)
 
 
 area_t *
-area_get (xcb_window_t win, const int x)
+area_get (xcb_window_t win, const int btn, const int x)
 {
-    for (int i = 0; i < astack.pos; i++)
-        if (astack.slot[i].window == win && x >= astack.slot[i].begin && x < astack.slot[i].end)
-            return &astack.slot[i];
+    // Looping backwards ensures that we get the innermost area first
+    for (int i = astack.pos; i >= 0; i--) {
+        area_t *a = &astack.slot[i];
+        if (a->window == win && a->button == btn
+                && x >= a->begin && x < a->end)
+            return a;
+    }
     return NULL;
 }
 
@@ -246,18 +251,18 @@ area_shift (xcb_window_t win, const int align, int delta)
 bool
 area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x, const int align, const int button)
 {
-    char *p = str;
+    int i;
     char *trail;
-    area_t *a = &astack.slot[astack.pos];
-
-    if (astack.pos == N) {
-        fprintf(stderr, "astack overflow!\n");
-        return false;
-    }
+    area_t *a;
 
     // A wild close area tag appeared!
-    if (*p != ':') {
-        *end = p;
+    if (*str != ':') {
+        *end = str;
+
+        // Find most recent unclosed area.
+        for (i = astack.pos - 1; i >= 0 && !astack.slot[i].active; i--)
+            ;
+        a = &astack.slot[i];
 
         // Basic safety checks
         if (!a->cmd || a->align != align || a->window != mon->window)
@@ -280,25 +285,30 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
                 break;
         }
 
-        astack.pos++;
-
+        a->active = false;
         return true;
     }
 
+    if (astack.pos >= N) {
+        fprintf(stderr, "astack overflow!\n");
+        return false;
+    }
+    a = &astack.slot[astack.pos++];
+
     // Found the closing : and check if it's just an escaped one
-    for (trail = strchr(++p, ':'); trail && trail[-1] == '\\'; trail = strchr(trail + 1, ':'))
+    for (trail = strchr(++str, ':'); trail && trail[-1] == '\\'; trail = strchr(trail + 1, ':'))
         ;
 
-    // Find the trailing : and make sure it's whitin the formatting block, also reject empty commands
-    if (!trail || p == trail || trail > optend) {
-        *end = p;
+    // Find the trailing : and make sure it's within the formatting block, also reject empty commands
+    if (!trail || str == trail || trail > optend) {
+        *end = str;
         return false;
     }
 
     *trail = '\0';
 
     // Sanitize the user command by unescaping all the :
-    for (char *needle = p; *needle; needle++) {
+    for (char *needle = str; *needle; needle++) {
         int delta = trail - &needle[1];
         if (needle[0] == '\\' && needle[1] == ':') {
             memmove(&needle[0], &needle[1], delta);
@@ -307,7 +317,8 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
     }
 
     // This is a pointer to the string buffer allocated in the main
-    a->cmd = p;
+    a->cmd = str;
+    a->active = true;
     a->align = align;
     a->begin = x;
     a->window = mon->window;
@@ -1191,9 +1202,9 @@ main (int argc, char **argv)
                         case XCB_BUTTON_PRESS:
                             press_ev = (xcb_button_press_event_t *)ev;
                             {
-                                area_t *area = area_get(press_ev->event, press_ev->event_x);
+                                area_t *area = area_get(press_ev->event, press_ev->detail, press_ev->event_x);
                                 // Respond to the click
-                                if (area && area->button == press_ev->detail) {
+                                if (area) {
                                     write(STDOUT_FILENO, area->cmd, strlen(area->cmd));
                                     write(STDOUT_FILENO, "\n", 1);
                                 }
