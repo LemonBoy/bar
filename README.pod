@@ -98,7 +98,7 @@ Create a clickable area starting from the current position, when the area is cli
 
 Eg. I<%{A:reboot:} Click here to reboot %{A}>
 
-The I<button> field is optional, it defaults to the left button, and it's a number ranging from 1 to 5 which maps to the left, middle, right, scroll down and scroll up movements. Your mileage may vary.
+The I<button> field is optional, it defaults to the left button, and it's a number ranging from 1 to 5 which maps to the left, middle, right, scroll up and scroll down movements. Your mileage may vary.
 
 =item B<S>I<dir>
 
