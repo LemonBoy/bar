@@ -1,3 +1,4 @@
+// vim:sw=4:ts=4:et:
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -513,7 +514,7 @@ font_load (const char *str)
 
     cookie = xcb_open_font_checked(c, font, strlen(str), str);
     if (xcb_request_check (c, cookie)) {
-        fprintf(stderr, "Could not load font %s\n", str);
+        fprintf(stderr, "Could not load font \"%s\"\n", str);
         return NULL;
     }
 
@@ -926,7 +927,7 @@ parse_geometry_string (char *str, int *tmp)
 void
 parse_font_list (char *str)
 {
-    char *tok;
+    char *tok, *end;
 
     if (!str)
         return;
@@ -939,12 +940,25 @@ parse_font_list (char *str)
             return;
         }
 
-        // Load the selected font
-        font_t *font = font_load(tok);
-        if (font)
-            font_list[font_count++] = font;
+        // Strip the leading and trailing whitespaces
+        while (isspace(*tok) || iscntrl(*tok))
+            tok++;
+
+        end = tok + strlen(tok) - 1;
+
+        while (end > tok && isspace(*end) || iscntrl(*end))
+            end--;
+
+        *(end + 1) = '\0';
+
+        if (tok[0]) {
+            // Load the selected font
+            font_t *font = font_load(tok);
+            if (font)
+                font_list[font_count++] = font;
+        }
         else
-            fprintf(stderr, "Could not load font \"%s\"...skipping\n", tok);
+            fprintf(stderr, "Empty font name, skipping...\n");
 
         tok = strtok(NULL, ",");
     }
