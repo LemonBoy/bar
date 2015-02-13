@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <xcb/xcb.h>
+#include <xcb/xcbext.h>
 #include <xcb/xinerama.h>
 #include <xcb/randr.h>
 
@@ -40,6 +41,16 @@ typedef struct area_t {
     xcb_window_t window;
     char *cmd;
 } area_t;
+
+typedef union rgba_t {
+    struct {
+        uint8_t r;
+        uint8_t g;
+        uint8_t b;
+        uint8_t a;
+    };
+    uint32_t v;
+} rgba_t;
 
 #define N 20
 
@@ -82,22 +93,89 @@ static bool dock = false;
 static bool topbar = true;
 static int bw = -1, bh = -1, bx = 0, by = 0;
 static int bu = 1; // Underline height
-static uint32_t fgc, bgc, ugc;
-static uint32_t dfgc, dbgc;
+static rgba_t fgc, bgc, ugc;
+static rgba_t dfgc, dbgc;
 static area_stack_t astack;
 
 void
 update_gc (void)
 {
-    xcb_change_gc(c, gc[GC_DRAW], XCB_GC_BACKGROUND | XCB_GC_FOREGROUND, (const uint32_t []){ fgc, bgc });
-    xcb_change_gc(c, gc[GC_CLEAR], XCB_GC_FOREGROUND, (const uint32_t []){ bgc });
-    xcb_change_gc(c, gc[GC_ATTR], XCB_GC_FOREGROUND, (const uint32_t []){ ugc });
+    xcb_change_gc(c, gc[GC_DRAW], XCB_GC_FOREGROUND, (const uint32_t []){ fgc.v });
+    xcb_change_gc(c, gc[GC_CLEAR], XCB_GC_FOREGROUND, (const uint32_t []){ bgc.v });
+    xcb_change_gc(c, gc[GC_ATTR], XCB_GC_FOREGROUND, (const uint32_t []){ ugc.v });
 }
 
 void
-fill_rect (xcb_drawable_t d, xcb_gcontext_t gc, int x, int y, int width, int height)
+fill_gradient (xcb_drawable_t d, int x, int y, int width, int height, rgba_t start, rgba_t stop)
 {
-    xcb_poly_fill_rectangle(c, d, gc, 1, (const xcb_rectangle_t []){ { x, y, width, height } });
+    float i;
+    const int K = 25; // The number of steps
+
+    for (i = 0.; i < 1.; i += (1. / K)) {
+        // Perform the linear interpolation magic
+        unsigned int rr = i * stop.r + (1. - i) * start.r;
+        unsigned int gg = i * stop.g + (1. - i) * start.g;
+        unsigned int bb = i * stop.b + (1. - i) * start.b;
+
+        // The alpha is ignored here
+        rgba_t step = { rr, gg, bb, 0xff };
+
+        xcb_change_gc(c, gc[GC_DRAW], XCB_GC_FOREGROUND, (const uint32_t []){ step.v });
+        xcb_poly_fill_rectangle(c, d, gc[GC_DRAW], 1,
+                               (const xcb_rectangle_t []){ { x, i * bh, width, bh / K + 1 } });
+    }
+
+    xcb_change_gc(c, gc[GC_DRAW], XCB_GC_FOREGROUND, (const uint32_t []){ fgc.v });
+}
+
+void
+fill_rect (xcb_drawable_t d, xcb_gcontext_t _gc, int x, int y, int width, int height)
+{
+    xcb_poly_fill_rectangle(c, d, _gc, 1, (const xcb_rectangle_t []){ { x, y, width, height } });
+}
+
+// Apparently xcb cannot seem to compose the right request for this call, hence we have to do it by
+// ourselves.
+// The funcion is taken from 'wmdia' (http://wmdia.sourceforge.net/)
+xcb_void_cookie_t xcb_poly_text_16_simple(xcb_connection_t * c,
+    xcb_drawable_t drawable, xcb_gcontext_t gc, int16_t x, int16_t y,
+    uint32_t len, const uint16_t *str)
+{
+    static const xcb_protocol_request_t xcb_req = {
+	    5,                // count
+	    0,                // ext
+	    XCB_POLY_TEXT_16, // opcode
+	    1                 // isvoid
+    };
+    struct iovec xcb_parts[7];
+    uint8_t xcb_lendelta[2];
+    xcb_void_cookie_t xcb_ret;
+    xcb_poly_text_8_request_t xcb_out;
+
+    xcb_out.pad0 = 0;
+    xcb_out.drawable = drawable;
+    xcb_out.gc = gc;
+    xcb_out.x = x;
+    xcb_out.y = y;
+
+    xcb_lendelta[0] = len;
+    xcb_lendelta[1] = 0;
+
+    xcb_parts[2].iov_base = (char *)&xcb_out;
+    xcb_parts[2].iov_len = sizeof(xcb_out);
+    xcb_parts[3].iov_base = 0;
+    xcb_parts[3].iov_len = -xcb_parts[2].iov_len & 3;
+
+    xcb_parts[4].iov_base = xcb_lendelta;
+    xcb_parts[4].iov_len = sizeof(xcb_lendelta);
+    xcb_parts[5].iov_base = (char *)str;
+    xcb_parts[5].iov_len = len * sizeof(int16_t);
+
+    xcb_parts[6].iov_base = 0;
+    xcb_parts[6].iov_len = -(xcb_parts[4].iov_len + xcb_parts[5].iov_len) & 3;
+
+    xcb_ret.sequence = xcb_send_request(c, 0, xcb_parts + 2, &xcb_req);
+    return xcb_ret;
 }
 
 int
@@ -107,13 +185,17 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
 
     switch (align) {
         case ALIGN_C:
-            xcb_copy_area(c, mon->pixmap, mon->pixmap, gc[GC_DRAW], mon->width / 2 - x / 2, 0,
-                    mon->width / 2 - (x + ch_width) / 2, 0, x, bh);
+            xcb_copy_area(c, mon->pixmap, mon->pixmap, gc[GC_DRAW],
+                    mon->width / 2 - x / 2, 0,
+                    mon->width / 2 - (x + ch_width) / 2, 0,
+                    x, bh);
             x = mon->width / 2 - (x + ch_width) / 2 + x;
             break;
         case ALIGN_R:
-            xcb_copy_area(c, mon->pixmap, mon->pixmap, gc[GC_DRAW], mon->width - x, 0,
-                    mon->width - x - ch_width, 0, x, bh);
+            xcb_copy_area(c, mon->pixmap, mon->pixmap, gc[GC_DRAW],
+                    mon->width - x, 0,
+                    mon->width - x - ch_width, 0,
+                    x, bh);
             x = mon->width - ch_width;
             break;
     }
@@ -124,8 +206,10 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
     // xcb accepts string in UCS-2 BE, so swap
     ch = (ch >> 8) | (ch << 8);
 
-    // String baseline coordinates
-    xcb_image_text_16(c, 1, mon->pixmap, gc[GC_DRAW], x, bh / 2 + cur_font->height / 2 - cur_font->descent, (xcb_char2b_t *)&ch);
+    // The coordinates here are those of the baseline
+    xcb_poly_text_16_simple(c, mon->pixmap, gc[GC_DRAW],
+                            x, bh / 2 + cur_font->height / 2 - cur_font->descent,
+                            1, &ch);
 
     // We can render both at the same time
     if (attrs & ATTR_OVERL)
@@ -136,12 +220,12 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
     return ch_width;
 }
 
-uint32_t
-parse_color (const char *str, char **end, const uint32_t def)
+rgba_t
+parse_color (const char *str, char **end, const rgba_t def)
 {
     xcb_alloc_named_color_reply_t *nc_reply;
-    int str_len;
-    uint32_t ret;
+    size_t string_len;
+    rgba_t ret;
 
     if (!str)
         return def;
@@ -156,47 +240,45 @@ parse_color (const char *str, char **end, const uint32_t def)
     // Hex representation
     if (str[0] == '#') {
         errno = 0;
-        uint32_t tmp = strtoul(str + 1, end, 16);
+        rgba_t tmp = (rgba_t)(uint32_t)strtoul(str + 1, end, 16);
 
         // Some error checking is definitely good
-        if (errno)
-            tmp = def;
+        if (errno) {
+            fprintf(stderr, "Invalid color specified\n");
+            return def;
+        }
 
-        // Xorg uses colors with premultiplied alpha
-        unsigned int a = (tmp&0xff000000) >> 24;
-        unsigned int r = (tmp&0x00ff0000) >> 16;
-        unsigned int g = (tmp&0x0000ff00) >> 8;
-        unsigned int b = (tmp&0x000000ff);
+        // Premultiply the alpha in
+        if (tmp.a) {
+            // The components are clamped automagically as the rgba_t is made of uint8_t
+            return (rgba_t){
+                .r = (tmp.r * tmp.a) / 255,
+                .g = (tmp.g * tmp.a) / 255,
+                .b = (tmp.b * tmp.a) / 255,
+                .a = tmp.a,
+            };
+        }
 
-        if (a) {
-            r = (r * a) / 255;
-            g = (g * a) / 255;
-            b = (b * a) / 255;
-
-            // Clamp on overflow
-            if (r > 255) r = 255;
-            if (g > 255) g = 255;
-            if (b > 255) b = 255;
-        } else
-            r = g = b = 0;
-
-        return a << 24 | r << 16 | g << 8 | b;
+        return (rgba_t)0U;
     }
 
     // Actual color name, resolve it
-    str_len = 0;
-    while (isalpha(str[str_len]))
-        str_len++;
+    for (string_len = 0; isalpha(str[string_len]); string_len++)
+        ;
 
-    nc_reply = xcb_alloc_named_color_reply(c, xcb_alloc_named_color(c, colormap, str_len, str), NULL);
+    nc_reply = xcb_alloc_named_color_reply(c, xcb_alloc_named_color(c, colormap, string_len, str), NULL);
 
     if (!nc_reply)
-        fprintf(stderr, "Could not alloc color \"%.*s\"\n", str_len, str);
-    ret = (nc_reply) ? nc_reply->pixel : def;
+        fprintf(stderr, "Could not alloc color \"%.*s\"\n", string_len, str);
+
+    ret = nc_reply?
+        (rgba_t)nc_reply->pixel:
+        def;
+
     free(nc_reply);
 
     if (end)
-        *end = (char *)str + str_len;
+        *end = (char *)str + string_len;
 
     return ret;
 }
@@ -363,7 +445,7 @@ parse (char *text)
     monitor_t *cur_mon;
     int pos_x, align, button;
     char *p = text, *end;
-    uint32_t tmp;
+    rgba_t tmp;
 
     pos_x = 0;
     align = ALIGN_L;
@@ -631,7 +713,7 @@ monitor_new (int x, int y, int width, int height)
             ret->x, ret->y, width, bh, 0,
             XCB_WINDOW_CLASS_INPUT_OUTPUT, visual,
             XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP,
-            (const uint32_t []){ bgc, bgc, dock, XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_BUTTON_PRESS, colormap });
+            (const uint32_t []){ bgc.v, bgc.v, dock, XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_BUTTON_PRESS, colormap });
 
     ret->pixmap = xcb_generate_id(c);
     xcb_create_pixmap(c, depth, ret->pixmap, ret->window, width, bh);
@@ -1063,13 +1145,13 @@ init (void)
 
     // Create the gc for drawing
     gc[GC_DRAW] = xcb_generate_id(c);
-    xcb_create_gc(c, gc[GC_DRAW], monhead->pixmap, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND, (const uint32_t []){ fgc, bgc });
+    xcb_create_gc(c, gc[GC_DRAW], monhead->pixmap, XCB_GC_FOREGROUND, (const uint32_t []){ fgc.v });
 
     gc[GC_CLEAR] = xcb_generate_id(c);
-    xcb_create_gc(c, gc[GC_CLEAR], monhead->pixmap, XCB_GC_FOREGROUND, (const uint32_t []){ bgc });
+    xcb_create_gc(c, gc[GC_CLEAR], monhead->pixmap, XCB_GC_FOREGROUND, (const uint32_t []){ bgc.v });
 
     gc[GC_ATTR] = xcb_generate_id(c);
-    xcb_create_gc(c, gc[GC_ATTR], monhead->pixmap, XCB_GC_FOREGROUND, (const uint32_t []){ ugc });
+    xcb_create_gc(c, gc[GC_ATTR], monhead->pixmap, XCB_GC_FOREGROUND, (const uint32_t []){ ugc.v });
 
     // Make the bar visible and clear the pixmap
     for (monitor_t *mon = monhead; mon; mon = mon->next) {
@@ -1143,8 +1225,8 @@ main (int argc, char **argv)
     xconn();
 
     // B/W combo
-    dbgc = bgc = parse_color("black", NULL, scr->black_pixel);
-    dfgc = fgc = parse_color("white", NULL, scr->white_pixel);
+    dbgc = bgc = parse_color("black", NULL, (rgba_t)scr->black_pixel);
+    dfgc = fgc = parse_color("white", NULL, (rgba_t)scr->white_pixel);
 
     ugc = fgc;
 
@@ -1169,8 +1251,8 @@ main (int argc, char **argv)
             case 'd': dock = true; break;
             case 'f': parse_font_list(optarg); break;
             case 'u': bu = strtoul(optarg, NULL, 10); break;
-            case 'B': dbgc = bgc = parse_color(optarg, NULL, scr->black_pixel); break;
-            case 'F': dfgc = fgc = parse_color(optarg, NULL, scr->white_pixel); break;
+            case 'B': dbgc = bgc = parse_color(optarg, NULL, (rgba_t)scr->black_pixel); break;
+            case 'F': dfgc = fgc = parse_color(optarg, NULL, (rgba_t)scr->white_pixel); break;
         }
     }
 
