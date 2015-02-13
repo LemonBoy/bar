@@ -118,7 +118,12 @@ fill_gradient (xcb_drawable_t d, int x, int y, int width, int height, rgba_t sta
         unsigned int bb = i * stop.b + (1. - i) * start.b;
 
         // The alpha is ignored here
-        rgba_t step = { rr, gg, bb, 0xff };
+        rgba_t step = {
+            .r = rr,
+            .g = gg,
+            .b = bb,
+            .a = 0xff
+        };
 
         xcb_change_gc(c, gc[GC_DRAW], XCB_GC_FOREGROUND, (const uint32_t []){ step.v });
         xcb_poly_fill_rectangle(c, d, gc[GC_DRAW], 1,
@@ -224,7 +229,7 @@ rgba_t
 parse_color (const char *str, char **end, const rgba_t def)
 {
     xcb_alloc_named_color_reply_t *nc_reply;
-    size_t string_len;
+    int string_len;
     rgba_t ret;
 
     if (!str)
@@ -1028,7 +1033,7 @@ parse_font_list (char *str)
 
         end = tok + strlen(tok) - 1;
 
-        while (end > tok && isspace(*end) || iscntrl(*end))
+        while ((end > tok && isspace(*end)) || iscntrl(*end))
             end--;
 
         *(end + 1) = '\0';
