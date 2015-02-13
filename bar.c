@@ -122,7 +122,7 @@ fill_gradient (xcb_drawable_t d, int x, int y, int width, int height, rgba_t sta
             .r = rr,
             .g = gg,
             .b = bb,
-            .a = 0xff
+            .a = 255,
         };
 
         xcb_change_gc(c, gc[GC_DRAW], XCB_GC_FOREGROUND, (const uint32_t []){ step.v });
@@ -231,6 +231,7 @@ parse_color (const char *str, char **end, const rgba_t def)
     xcb_alloc_named_color_reply_t *nc_reply;
     int string_len;
     rgba_t ret;
+    char *ep;
 
     if (!str)
         return def;
@@ -239,19 +240,29 @@ parse_color (const char *str, char **end, const rgba_t def)
     if (str[0] == '-') {
         if (end)
             *end = (char *)str + 1;
+
         return def;
     }
 
     // Hex representation
     if (str[0] == '#') {
         errno = 0;
-        rgba_t tmp = (rgba_t)(uint32_t)strtoul(str + 1, end, 16);
+        rgba_t tmp = (rgba_t)(uint32_t)strtoul(str + 1, &ep, 16);
+
+        if (end)
+            *end = ep;
 
         // Some error checking is definitely good
         if (errno) {
             fprintf(stderr, "Invalid color specified\n");
             return def;
         }
+
+        string_len = ep - (str + 1);
+
+        // If the code is in #rrggbb form then assume it's opaque
+        if (string_len <= 6)
+            tmp.a = 255;
 
         // Premultiply the alpha in
         if (tmp.a) {
