@@ -1215,6 +1215,7 @@ main (int argc, char **argv)
     char input[4096] = {0, };
     bool permanent = false;
     int geom_v[4] = { -1, -1, 0, 0 };
+    int ch;
 
     // Install the parachute!
     atexit(cleanup);
@@ -1230,7 +1231,6 @@ main (int argc, char **argv)
 
     ugc = fgc;
 
-    char ch;
     while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:")) != -1) {
         switch (ch) {
             case 'h':
