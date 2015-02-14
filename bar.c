@@ -136,7 +136,10 @@ fill_gradient (xcb_drawable_t d, int x, int y, int width, int height, rgba_t sta
 void
 fill_rect (xcb_drawable_t d, xcb_gcontext_t _gc, int x, int y, int width, int height)
 {
-    xcb_poly_fill_rectangle(c, d, _gc, 1, (const xcb_rectangle_t []){ { x, y, width, height } });
+    rgba_t start = (rgba_t)0x222222U;
+    rgba_t end = (rgba_t)0x111111U;
+    fill_gradient(d, x, y, width, height, start, end);
+    // xcb_poly_fill_rectangle(c, d, _gc, 1, (const xcb_rectangle_t []){ { x, y, width, height } });
 }
 
 // Apparently xcb cannot seem to compose the right request for this call, hence we have to do it by
@@ -183,6 +186,52 @@ xcb_void_cookie_t xcb_poly_text_16_simple(xcb_connection_t * c,
     return xcb_ret;
 }
 
+#define pad_to(x, to) (((x) + (to) - 1) & ~((to) - 1))
+
+void
+xbm_create_mask (uint8_t *bits, int width, int height, xcb_pixmap_t ppp)
+{
+    const xcb_setup_t *setup = xcb_get_setup(c);
+    uint8_t *buf;
+    int width_b, line;
+    xcb_gcontext_t tmp_gc;
+    xcb_pixmap_t mask; 
+    xcb_void_cookie_t cookie;
+
+    // XCB_IMAGE_ORDER_LSB_FIRST
+    // bitmap_format_bit_order
+    width_b = (width + 7) / 8;
+    line = pad_to(width_b, setup->bitmap_format_scanline_pad >> 3);
+
+    buf = malloc(height * line);
+    if (!buf)
+        return;
+
+    for (int i = 0; i < height; i++)
+        memcpy(buf  + (i * line), 
+               bits + (i * width_b), 
+               width_b);
+
+    mask = xcb_generate_id(c);
+    xcb_create_pixmap(c, 24, mask, mask, width, height);
+
+    tmp_gc = xcb_generate_id(c);
+    xcb_create_gc(c, tmp_gc, mask, XCB_GC_FOREGROUND, (const uint32_t []){ -1 });
+
+    cookie = xcb_put_image_checked(c, XCB_IMAGE_FORMAT_XY_BITMAP, mask, tmp_gc, width, height, 0, 0, 0, 1, height * line, buf);
+
+    free(buf);
+    xcb_free_gc(c, tmp_gc);
+
+    xcb_generic_error_t *err;
+    err = xcb_request_check(c, cookie);
+
+    if (err)
+        fprintf(stderr, "fuckit %i\n", err->error_code);
+    else
+        fprintf(stderr, "ok\n");
+}
+
 int
 draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
 {
@@ -212,9 +261,25 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
     ch = (ch >> 8) | (ch << 8);
 
     // The coordinates here are those of the baseline
-    xcb_poly_text_16_simple(c, mon->pixmap, gc[GC_DRAW],
-                            x, bh / 2 + cur_font->height / 2 - cur_font->descent,
-                            1, &ch);
+    // xcb_poly_text_16_simple(c, mon->pixmap, gc[GC_DRAW],
+    //                         x, bh / 2 + cur_font->height / 2 - cur_font->descent,
+    //                         1, &ch);
+
+
+    static unsigned char fox_bits[] = {
+        0x81, 
+        0xC3,
+        0xBD,
+        0xFF,
+        0x99,
+        0xDB,
+        0x7E,
+        0x18,
+    };
+    int xbm_w = 8;
+    int xbm_h = 8;
+
+    xbm_create_mask(fox_bits, 8, 8, mon->pixmap);
 
     // We can render both at the same time
     if (attrs & ATTR_OVERL)
@@ -1061,8 +1126,6 @@ parse_font_list (char *str)
         tok = strtok(NULL, ",");
     }
 }
-
-
 
 void
 xconn (void)
