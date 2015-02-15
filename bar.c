@@ -44,9 +44,9 @@ typedef struct area_t {
 
 typedef union rgba_t {
     struct {
-        uint8_t r;
-        uint8_t g;
         uint8_t b;
+        uint8_t g;
+        uint8_t r;
         uint8_t a;
     };
     uint32_t v;
