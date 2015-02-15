@@ -188,15 +188,24 @@ xcb_void_cookie_t xcb_poly_text_16_simple(xcb_connection_t * c,
 
 #define pad_to(x, to) (((x) + (to) - 1) & ~((to) - 1))
 
-void
-xbm_create_mask (uint8_t *bits, int width, int height, xcb_pixmap_t ppp)
+typedef struct xbm_t {
+    int width;
+    int height;
+    uint8_t *bits;
+    size_t bits_size;
+} xbm_t;
+
+xbm_t xbm_cache[20];
+int xbm_cache_elem = 0;
+
+xbm_t *
+xbm_load (uint8_t *bits, int width, int height)
 {
     const xcb_setup_t *setup = xcb_get_setup(c);
     uint8_t *buf;
     int width_b, line;
-    xcb_gcontext_t tmp_gc;
-    xcb_pixmap_t mask; 
-    xcb_void_cookie_t cookie;
+
+    xbm_t *ico = &xbm_cache[xbm_cache_elem];
 
     // XCB_IMAGE_ORDER_LSB_FIRST
     // bitmap_format_bit_order
@@ -205,31 +214,88 @@ xbm_create_mask (uint8_t *bits, int width, int height, xcb_pixmap_t ppp)
 
     buf = malloc(height * line);
     if (!buf)
-        return;
+        return NULL;
+
+    // Despite the naming, this is actually a stencil
+    for (int i = 0; i < height * width_b; i++)
+        bits[i] = ~bits[i];
 
     for (int i = 0; i < height; i++)
-        memcpy(buf  + (i * line), 
-               bits + (i * width_b), 
+        memcpy(buf  + (i * line),
+               bits + (i * width_b),
                width_b);
 
+    ico->width = width;
+    ico->height = height;
+    ico->bits = buf;
+    ico->bits_size = height * line;
+
+    xbm_cache_elem++;
+
+    return ico;
+}
+
+int
+pixmap_shift (monitor_t *mon, int x, int align, int w)
+{
+    switch (align) {
+        case ALIGN_L:
+            return x;
+
+        case ALIGN_C:
+            xcb_copy_area(c, mon->pixmap, mon->pixmap, gc[GC_DRAW],
+                    mon->width / 2 - x / 2, 0,
+                    mon->width / 2 - (x + w) / 2, 0,
+                    x, bh);
+            return mon->width / 2 - (x + w) / 2 + x;
+
+        case ALIGN_R:
+            xcb_copy_area(c, mon->pixmap, mon->pixmap, gc[GC_DRAW],
+                    mon->width - x, 0,
+                    mon->width - x - w, 0,
+                    x, bh);
+            return mon->width - w;
+    }
+
+    return 0;
+}
+
+int
+draw_icon (monitor_t *mon, int x, xbm_t *icon, int align)
+{
+    xcb_gcontext_t tmp_gc;
+    xcb_pixmap_t mask;
+
+    x = pixmap_shift(mon, x, align, icon->width);
+
     mask = xcb_generate_id(c);
-    xcb_create_pixmap(c, 24, mask, mask, width, height);
+    xcb_create_pixmap(c, 1, mask, mon->pixmap, icon->width, icon->height);
 
     tmp_gc = xcb_generate_id(c);
-    xcb_create_gc(c, tmp_gc, mask, XCB_GC_FOREGROUND, (const uint32_t []){ -1 });
+    xcb_create_gc(c, tmp_gc, mask, 0, NULL);
 
-    cookie = xcb_put_image_checked(c, XCB_IMAGE_FORMAT_XY_BITMAP, mask, tmp_gc, width, height, 0, 0, 0, 1, height * line, buf);
+    xcb_put_image(
+            c,
+            XCB_IMAGE_FORMAT_XY_BITMAP,
+            mask,
+            tmp_gc,
+            icon->width, icon->height,
+            0, 0,
+            0, 1,
+            icon->bits_size, icon->bits);
 
-    free(buf);
     xcb_free_gc(c, tmp_gc);
 
-    xcb_generic_error_t *err;
-    err = xcb_request_check(c, cookie);
+    xcb_change_gc(c, gc[GC_DRAW], XCB_GC_CLIP_MASK, (const uint32_t []){ mask });
+    xcb_change_gc(c, gc[GC_DRAW], XCB_GC_CLIP_ORIGIN_X | XCB_GC_CLIP_ORIGIN_Y,
+            (const uint32_t []){ x, bh / 2 - icon->height / 2 });
+    xcb_poly_fill_rectangle(c, mon->pixmap, gc[GC_DRAW], 1,
+            (const xcb_rectangle_t []){ { 0, 0, bw, bh } });
+    xcb_change_gc(c, gc[GC_DRAW], XCB_GC_CLIP_MASK, (const uint32_t []){ XCB_NONE });
 
-    if (err)
-        fprintf(stderr, "fuckit %i\n", err->error_code);
-    else
-        fprintf(stderr, "ok\n");
+    xcb_free_pixmap(c, mask);
+
+    return icon->width;
 }
 
 int
@@ -237,23 +303,7 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
 {
     int ch_width = cur_font->width_lut[ch - cur_font->char_min].character_width;
 
-    switch (align) {
-        case ALIGN_C:
-            xcb_copy_area(c, mon->pixmap, mon->pixmap, gc[GC_DRAW],
-                    mon->width / 2 - x / 2, 0,
-                    mon->width / 2 - (x + ch_width) / 2, 0,
-                    x, bh);
-            x = mon->width / 2 - (x + ch_width) / 2 + x;
-            break;
-        case ALIGN_R:
-            xcb_copy_area(c, mon->pixmap, mon->pixmap, gc[GC_DRAW],
-                    mon->width - x, 0,
-                    mon->width - x - ch_width, 0,
-                    x, bh);
-            x = mon->width - ch_width;
-            break;
-    }
-
+    x = pixmap_shift(mon, x, align, ch_width);
     // Draw the background first
     fill_rect(mon->pixmap, gc[GC_CLEAR], x, by, ch_width, bh);
 
@@ -261,25 +311,9 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
     ch = (ch >> 8) | (ch << 8);
 
     // The coordinates here are those of the baseline
-    // xcb_poly_text_16_simple(c, mon->pixmap, gc[GC_DRAW],
-    //                         x, bh / 2 + cur_font->height / 2 - cur_font->descent,
-    //                         1, &ch);
-
-
-    static unsigned char fox_bits[] = {
-        0x81, 
-        0xC3,
-        0xBD,
-        0xFF,
-        0x99,
-        0xDB,
-        0x7E,
-        0x18,
-    };
-    int xbm_w = 8;
-    int xbm_h = 8;
-
-    xbm_create_mask(fox_bits, 8, 8, mon->pixmap);
+    xcb_poly_text_16_simple(c, mon->pixmap, gc[GC_DRAW],
+                            x, bh / 2 + cur_font->height / 2 - cur_font->descent,
+                            1, &ch);
 
     // We can render both at the same time
     if (attrs & ATTR_OVERL)
@@ -289,6 +323,14 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
 
     return ch_width;
 }
+
+    static unsigned char fox_bits[] = {
+        0x70, 0x88, 0xC4, 0xE2, 0x7E, 0x32, 0x09, 0x07
+        0x81, 0xC3, 0xBD, 0xFF, 0x99, 0xDB, 0x7E, 0x18,
+    };
+    int xbm_w = 8;
+    int xbm_h = 8;
+
 
 rgba_t
 parse_color (const char *str, char **end, const rgba_t def)
@@ -604,6 +646,17 @@ parse (char *text)
                               p = end;
                               break;
 
+                    case 'i':
+                              ;
+                              int icon_index = (int)strtoul(p, NULL, 10);
+                              if (icon_index < xbm_cache_elem) {
+                                  int w = draw_icon(cur_mon, pos_x, &xbm_cache[0], align);
+                                  pos_x += w;
+                                  area_shift(cur_mon->window, align, w);
+                              }
+                              p = end;
+                              break;
+
                     // In case of error keep parsing after the closing }
                     default:
                         p = end;
@@ -658,8 +711,8 @@ parse (char *text)
             xcb_change_gc(c, gc[GC_DRAW] , XCB_GC_FONT, (const uint32_t []){ cur_font->ptr });
 
             int w = draw_char(cur_mon, cur_font, pos_x, align, ucs);
-
             pos_x += w;
+
             area_shift(cur_mon->window, align, w);
         }
     }
@@ -1345,6 +1398,8 @@ main (int argc, char **argv)
     init();
     // Get the fd to Xserver
     pollin[1].fd = xcb_get_file_descriptor(c);
+
+    xbm_load (fox_bits, xbm_w, xbm_h);
 
     for (;;) {
         bool redraw = false;
