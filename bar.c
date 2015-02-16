@@ -460,7 +460,7 @@ parse (char *text)
     font_t *cur_font;
     monitor_t *cur_mon;
     int pos_x, align, button;
-    char *p = text, *end;
+    char *p = text, *block_end, *ep;
     rgba_t tmp;
 
     pos_x = 0;
@@ -476,8 +476,8 @@ parse (char *text)
         if (*p == '\0' || *p == '\n')
             return;
 
-        if (*p == '%' && p++ && *p == '{' && (end = strchr(p++, '}'))) {
-            while (p < end) {
+        if (*p == '%' && p++ && *p == '{' && (block_end = strchr(p++, '}'))) {
+            while (p < block_end) {
                 while (isspace(*p))
                     p++;
 
@@ -502,7 +502,7 @@ parse (char *text)
                               // The range is 1-5
                               if (isdigit(*p) && (*p > '0' && *p < '6'))
                                   button = *p++ - '0';
-                              area_add(p, end, &p, cur_mon, pos_x, align, button);
+                              area_add(p, block_end, &p, cur_mon, pos_x, align, button);
                               break;
 
                     case 'B': bgc = parse_color(p, &p, dbgc); update_gc(); break;
@@ -531,17 +531,17 @@ parse (char *text)
                               break;
 
                     case 'T':
-                              font_index = (int)strtoul(p, NULL, 10);
+                              font_index = (int)strtoul(p, &ep, 10);
                               // User-specified 'font_index' ∊ (0,font_count]
                               // Otherwise just fallback to the automatic font selection
                               if (!font_index || font_index > font_count)
                                   font_index = -1;
-                              p = end;
+                              p = ep;
                               break;
 
                     // In case of error keep parsing after the closing }
                     default:
-                        p = end;
+                        p = block_end;
                 }
             }
             // Eat the trailing }
