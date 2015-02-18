@@ -811,6 +811,9 @@ monitor_create_chain (xcb_rectangle_t *rects, const int num)
                     min(width, rects[i].width - left),
                     rects[i].height);
 
+            if (!mon)
+                break;
+
             monitor_add(mon);
 
             width -= rects[i].width - left;
