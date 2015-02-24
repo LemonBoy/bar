@@ -215,7 +215,7 @@ xcb_void_cookie_t xcb_poly_text_16_simple(xcb_connection_t * c,
 
 
 int
-xft_char_width_slot (wchar_t ch)
+xft_char_width_slot (uint16_t ch)
 {
     int slot = ch % MAX_WIDTHS;
     while (xft_char[slot] != 0 && xft_char[slot] != ch)
@@ -225,7 +225,7 @@ xft_char_width_slot (wchar_t ch)
     return slot;
 }
 
-int xft_char_width (wchar_t ch, font_t *cur_font)
+int xft_char_width (uint16_t ch, font_t *cur_font)
 {
     int slot = xft_char_width_slot(ch);
     if (!xft_char[slot]) {
@@ -295,46 +295,6 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
         fill_rect(mon->pixmap, gc[GC_ATTR], x, bh - bu, ch_width, bu);
 
     return ch_width;
-}
-
-int
-utf8decode(char *s, wchar_t *u) {
-    char c;
-    int i, n, rtn;
-    rtn = 1;
-    c = *s;
-    if(~c & 0x80) { /* 0xxxxxxx */
-        *u = c;
-        return rtn;
-    } else if((c & 0xE0) == 0xC0) { /* 110xxxxx */
-        *u = c & 0x1F;
-        n = 1;
-    } else if((c & 0xF0) == 0xE0) { /* 1110xxxx */
-        *u = c & 0x0F;
-        n = 2;
-    } else if((c & 0xF8) == 0xF0) { /* 11110xxx */
-        *u = c & 0x07;
-        n = 3;
-    } else {
-        goto invalid;
-    }
-    for(i = n, ++s; i > 0; --i, ++rtn, ++s) {
-        c = *s;
-        if((c & 0xC0) != 0x80) /* 10xxxxxx */
-            goto invalid;
-        *u <<= 6;
-        *u |= c & 0x3F;
-    }
-    if((n == 1 && *u < 0x80) ||
-            (n == 2 && *u < 0x800) ||
-            (n == 3 && *u < 0x10000) ||
-            (*u >= 0xD800 && *u <= 0xDFFF)) {
-        goto invalid;
-    }
-    return rtn;
-invalid:
-    *u = 0xFFFD;
-    return rtn;
 }
 
 rgba_t
@@ -716,9 +676,6 @@ parse (char *text)
                 ucs = utf[0];
                 p += 1;
             }
-
-//            wchar_t t;
-//            p += utf8decode(p, &t);
 
             cur_font = select_drawable_font(ucs);
             if (!cur_font)
