@@ -84,6 +84,10 @@ Set the text background color. The parameter I<color> can be I<-> or a color in 
 
 Set the text foreground color. The parameter I<color> can be I<-> or a color in one of the formats mentioned before. The special value I<-> resets the color to the default one.
 
+=item B<T>I<index>
+
+Set the font used to draw the following text. The parameter I<index> is a 1-based index of the font list supplied to bar. Any other value (for example I<->) resets bar to normal behaviour (matching the first font that can be used for that character). If the selected font can't be used to draw a character, bar will fall back to normal behaviour for that character.
+
 =item B<U>I<color>
 
 Set the text underline color. The parameter I<color> can be I<-> or a color in one of the formats mentioned before. The special value I<-> resets the color to the default one.
@@ -94,7 +98,11 @@ Create a clickable area starting from the current position, when the area is cli
 
 Eg. I<%{A:reboot:} Click here to reboot %{A}>
 
-The I<button> field is optional, it defaults to the left button, and it's a number ranging from 1 to 5 which maps to the left, middle, right, scroll down and scroll up movements. Your mileage may vary.
+The I<button> field is optional, it defaults to the left button, and it's a number ranging from 1 to 5 which maps to the left, middle, right, scroll up and scroll down movements. Your mileage may vary. 
+
+Nested clickable areas can trigger different commands.
+
+Eg. I<%{A:reboot:}%{A3:halt:} Left click to reboot, right click to shutdown %{A}%{A}>
 
 =item B<S>I<dir>
 
@@ -164,6 +172,6 @@ L<git repository|https://github.com/LemonBoy/bar>
 
 Xinerama support was kindly contributed by Stebalien
 
-RandR support was kindly contributed by jvvv 
+RandR support was kindly contributed by jvvv
 
 Clickable areas support was heavily based off u-ra contribution
