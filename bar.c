@@ -340,9 +340,10 @@ area_shift (xcb_window_t win, const int align, int delta)
         delta /= 2;
 
     for (int i = 0; i < astack.pos; i++) {
-        if (astack.slot[i].window == win && astack.slot[i].align == align) {
-            astack.slot[i].begin -= delta;
-            astack.slot[i].end -= delta;
+        area_t *a = &astack.slot[i];
+        if (a->window == win && a->align == align && !a->active) {
+            a->begin -= delta;
+            a->end -= delta;
         }
     }
 }
