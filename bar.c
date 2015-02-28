@@ -136,10 +136,7 @@ fill_gradient (xcb_drawable_t d, int x, int y, int width, int height, rgba_t sta
 void
 fill_rect (xcb_drawable_t d, xcb_gcontext_t _gc, int x, int y, int width, int height)
 {
-    rgba_t start = (rgba_t)0x222222U;
-    rgba_t end = (rgba_t)0x111111U;
-    fill_gradient(d, x, y, width, height, start, end);
-    // xcb_poly_fill_rectangle(c, d, _gc, 1, (const xcb_rectangle_t []){ { x, y, width, height } });
+    xcb_poly_fill_rectangle(c, d, _gc, 1, (const xcb_rectangle_t []){ { x, y, width, height } });
 }
 
 // Apparently xcb cannot seem to compose the right request for this call, hence we have to do it by
@@ -197,6 +194,21 @@ typedef struct xbm_t {
 
 xbm_t xbm_cache[20];
 int xbm_cache_elem = 0;
+
+int
+xbm_parse (char *path)
+{
+    FILE *fp;
+    char line[4096];
+    int xbm_height, xcb_width;
+
+    fp = fopen(path, "r");
+    if (!fp)
+        return 0;
+
+    while (fgets(line, sizeof(line), fp)) {
+    }
+}
 
 xbm_t *
 xbm_load (uint8_t *bits, int width, int height)
