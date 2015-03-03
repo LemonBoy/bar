@@ -177,10 +177,10 @@ xcb_void_cookie_t xcb_poly_text_16_simple(xcb_connection_t * c,
     uint32_t len, const uint16_t *str)
 {
     static const xcb_protocol_request_t xcb_req = {
-	    5,                // count
-	    0,                // ext
-	    XCB_POLY_TEXT_16, // opcode
-	    1                 // isvoid
+        5,                // count
+        0,                // ext
+        XCB_POLY_TEXT_16, // opcode
+        1                 // isvoid
     };
     struct iovec xcb_parts[7];
     uint8_t xcb_lendelta[2];
@@ -277,11 +277,9 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
     if (cur_font->xft_ft) {
         XftDrawString16 (xft_draw, &sel_fg, cur_font->xft_ft, x,y, &ch, 1);
     } else {
-        char c_ = ch > 127 ? ' ' : ch;
         /* xcb accepts string in UCS-2 BE, so swap */
         ch = (ch >> 8) | (ch << 8);
-        /* String baseline coordinates */
-        xcb_image_text_8(c, 1, mon->pixmap, gc[GC_DRAW], x,y, &c_);
+        
         // The coordinates here are those of the baseline
         xcb_poly_text_16_simple(c, mon->pixmap, gc[GC_DRAW],
                             x, bh / 2 + cur_font->height / 2 - cur_font->descent,
@@ -418,9 +416,10 @@ area_shift (xcb_window_t win, const int align, int delta)
         delta /= 2;
 
     for (int i = 0; i < astack.pos; i++) {
-        if (astack.slot[i].window == win && astack.slot[i].align == align) {
-            astack.slot[i].begin -= delta;
-            astack.slot[i].end -= delta;
+        area_t *a = &astack.slot[i];
+        if (a->window == win && a->align == align && !a->active) {
+            a->begin -= delta;
+            a->end -= delta;
         }
     }
 }
