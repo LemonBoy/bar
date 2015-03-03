@@ -147,10 +147,10 @@ xcb_void_cookie_t xcb_poly_text_16_simple(xcb_connection_t * c,
     uint32_t len, const uint16_t *str)
 {
     static const xcb_protocol_request_t xcb_req = {
-	    5,                // count
-	    0,                // ext
-	    XCB_POLY_TEXT_16, // opcode
-	    1                 // isvoid
+        5,                // count
+        0,                // ext
+        XCB_POLY_TEXT_16, // opcode
+        1                 // isvoid
     };
     struct iovec xcb_parts[7];
     uint8_t xcb_lendelta[2];
@@ -206,7 +206,7 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
     }
 
     // Draw the background first
-    fill_rect(mon->pixmap, gc[GC_CLEAR], x, by, ch_width, bh);
+    fill_rect(mon->pixmap, gc[GC_CLEAR], x, 0, ch_width, bh);
 
     // xcb accepts string in UCS-2 BE, so swap
     ch = (ch >> 8) | (ch << 8);
