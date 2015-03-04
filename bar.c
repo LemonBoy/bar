@@ -553,7 +553,7 @@ parse (char *text)
         fill_rect(m->pixmap, gc[GC_CLEAR], 0, 0, m->width, bh);
 
     /* Create xft drawable */
-    if (!(xft_draw = XftDrawCreate (dpy, cur_mon->pixmap, visual_ptr , colormap ))) {
+    if (!(xft_draw = XftDrawCreate (dpy, cur_mon->pixmap, visual_ptr , colormap))) {
         fprintf(stderr, "Couldn't create xft drawable\n");
     }
 
@@ -822,8 +822,8 @@ monitor_new (int x, int y, int width, int height)
     ret->width = width;
     ret->next = ret->prev = NULL;
     ret->window = xcb_generate_id(c);
-
-    xcb_create_window(c, XCB_COPY_FROM_PARENT, ret->window, scr->root,
+    int depth = (visual == scr->root_visual) ? XCB_COPY_FROM_PARENT : 32;
+    xcb_create_window(c, depth, ret->window, scr->root,
                       ret->x, ret->y, width, bh, 0,
                       XCB_WINDOW_CLASS_INPUT_OUTPUT, visual,
                       XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP,
@@ -832,7 +832,7 @@ monitor_new (int x, int y, int width, int height)
     });
 
     ret->pixmap = xcb_generate_id(c);
-    xcb_create_pixmap(c, scr->root_depth, ret->pixmap, ret->window, width, bh);
+    xcb_create_pixmap(c, depth, ret->pixmap, ret->window, width, bh);
 
     return ret;
 }
@@ -917,7 +917,6 @@ monitor_create_chain (xcb_rectangle_t *rects, const int num)
             monitor_add(mon);
 
             width -= rects[i].width - left;
-
             // No need to check for other monitors
             if (width <= 0)
                 break;
@@ -1056,8 +1055,21 @@ get_xinerama_monitors (void)
 xcb_visualid_t
 get_visual (void)
 {
-	visual_ptr = DefaultVisual(dpy, scr_nbr);	
-	return scr->root_visual; //scr->root_visual;
+
+    XVisualInfo xv; 
+    xv.depth = 32;
+    int result = 0;
+    XVisualInfo* result_ptr = NULL; 
+    result_ptr = XGetVisualInfo(dpy, VisualDepthMask, &xv, &result);
+
+    if (result > 0) {
+        visual_ptr = result_ptr->visual;
+        return result_ptr->visualid;
+    }
+    
+    //Fallback
+    visual_ptr = DefaultVisual(dpy, scr_nbr);	
+	return scr->root_visual;
 }
 
 // Parse an X-styled geometry string, we don't support signed offsets tho.
@@ -1177,7 +1189,8 @@ xconn (void)
 
     /* Try to get a RGBA visual and build the colormap for that */
 	visual = get_visual();
-	colormap = DefaultColormap(dpy, scr_nbr);
+    colormap = xcb_generate_id(c);
+    xcb_create_colormap(c, XCB_COLORMAP_ALLOC_NONE, colormap, scr->root, visual);
 }
 
 void
