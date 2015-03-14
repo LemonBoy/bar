@@ -1254,10 +1254,11 @@ main (int argc, char **argv)
     while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:")) != -1) {
         switch (ch) {
             case 'h':
+                printf ("lemonbar version %s\n", VERSION);
                 printf ("usage: %s [-h | -g | -b | -d | -f | -a | -p | -u | -B | -F]\n"
                         "\t-h Show this help\n"
                         "\t-g Set the bar geometry {width}x{height}+{xoffset}+{yoffset}\n"
-                        "\t-b Put bar at the bottom of the screen\n"
+                        "\t-b Put the bar at the bottom of the screen\n"
                         "\t-d Force docking (use this if your WM isn't EWMH compliant)\n"
                         "\t-f Bar font list, comma separated\n"
                         "\t-p Don't close after the data ends\n"
