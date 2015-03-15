@@ -285,7 +285,7 @@ parse_color (const char *str, char **end, const rgba_t def)
     nc_reply = xcb_alloc_named_color_reply(c, xcb_alloc_named_color(c, colormap, string_len, str), NULL);
 
     if (!nc_reply)
-        fprintf(stderr, "Could not alloc color \"%.*s\"\n", string_len, str);
+        fprintf(stderr, "Could not allocate the color \"%.*s\"\n", string_len, str);
 
     ret = nc_reply?
         (rgba_t)nc_reply->pixel:
@@ -446,7 +446,7 @@ select_drawable_font (const uint16_t c)
     if (font_index != -1 && font_has_glyph(font_list[font_index - 1], c))
         return font_list[font_index - 1];
 
-    // If the end is reached without finding an apropriate font, return NULL.
+    // If the end is reached without finding an appropriate font, return NULL.
     // If the font can draw the character, return it.
     for (int i = 0; i < font_count; i++) {
         if (font_has_glyph(font_list[i], c))
@@ -899,7 +899,7 @@ get_randr_monitors (void)
             continue;
 
         for (j = 0; j < num; j++) {
-            // Does I countain J ?
+            // Does I contain J ?
 
             if (i != j && rects[j].width) {
                 if (rects[j].x >= rects[i].x && rects[j].x + rects[j].width <= rects[i].x + rects[i].width &&
@@ -975,7 +975,7 @@ get_visual (void)
     return scr->root_visual;
 }
 
-// Parse an X-styled geometry string, we don't support signed offsets tho.
+// Parse an X-styled geometry string, we don't support signed offsets though.
 bool
 parse_geometry_string (char *str, int *tmp)
 {
@@ -1115,7 +1115,7 @@ init (void)
     // Generate a list of screens
     const xcb_query_extension_reply_t *qe_reply;
 
-    // Initialiaze monitor list head and tail
+    // Initialize monitor list head and tail
     monhead = montail = NULL;
 
     // Check if RandR is present
@@ -1307,7 +1307,7 @@ main (int argc, char **argv)
                 parse(input);
                 redraw = true;
             }
-            if (pollin[1].revents & POLLIN) { // Xserver broadcasted an event
+            if (pollin[1].revents & POLLIN) { // The event comes from the Xorg server
                 while ((ev = xcb_poll_for_event(c))) {
                     expose_ev = (xcb_expose_event_t *)ev;
 
