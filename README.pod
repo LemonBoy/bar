@@ -1,16 +1,16 @@
 =head1 NAME
 
-bar - bar ain't recursive
+lemonbar - Featherweight lemon-scented bar
 
 =for HTML <a href="https://travis-ci.org/LemonBoy/bar"><img src="https://travis-ci.org/LemonBoy/bar.svg?branch=master"></a>
 
 =head1 SYNOPSIS
 
-I<bar> [-h | -g I<width>B<x>I<height>B<+>I<x>B<+>I<y> | -b | -d | -f I<font> | -p | -u I<pixel> | -B I<color> | -F I<color>]
+I<lemonbar> [-h | -g I<width>B<x>I<height>B<+>I<x>B<+>I<y> | -b | -d | -f I<font> | -p | -u I<pixel> | -B I<color> | -F I<color>]
 
 =head1 DESCRIPTION
 
-B<bar> is a lightweight bar entirely based on XCB. Provides full UTF-8 support, basic formatting, RandR and Xinerama support and EWMH compliance without wasting your precious memory.
+B<lemonbar> (formerly known as B<bar>) is a lightweight bar entirely based on XCB. Provides full UTF-8 support, basic formatting, RandR and Xinerama support and EWMH compliance without wasting your precious memory.
 
 =head1 OPTIONS
 
@@ -34,11 +34,11 @@ Force docking without asking the window manager. This is needed if the window ma
 
 =item B<-f> I<font>
 
-Comma separated list of fonts, bar supports a maximum of five fonts (the limit can be tweaked by changing the MAX_FONT_COUNT parameter in the source).
+Comma separated list of fonts, lemonbar supports a maximum of five fonts (the limit can be tweaked by changing the MAX_FONT_COUNT parameter in the source).
 
 =item B<-p>
 
-Make bar permanent, don't exit after the standard input is closed.
+Make the bar permanent, don't exit after the standard input is closed.
 
 =item B<-u> I<pixel>
 
@@ -56,7 +56,7 @@ Set the foreground color of the bar. Accepts the same color formats as B<-B>.
 
 =head1 FORMATTING
 
-bar provides a screenrc-inspired formatting syntax to allow full customization at runtime. Every formatting block is opened with B<%{> and closed by B<}> and accepts the following commands, the parser tries it's best to handle malformed input.
+lemonbar provides a screenrc-inspired formatting syntax to allow full customization at runtime. Every formatting block is opened with B<%{> and closed by B<}> and accepts the following commands, the parser tries it's best to handle malformed input.
 
 =over
 
@@ -86,7 +86,7 @@ Set the text foreground color. The parameter I<color> can be I<-> or a color in 
 
 =item B<T>I<index>
 
-Set the font used to draw the following text. The parameter I<index> is a 1-based index of the font list supplied to bar. Any other value (for example I<->) resets bar to normal behaviour (matching the first font that can be used for that character). If the selected font can't be used to draw a character, bar will fall back to normal behaviour for that character.
+Set the font used to draw the following text. The parameter I<index> is a 1-based index of the font list supplied to bar. Any other value (for example I<->) resets the bar to normal behaviour (matching the first font that can be used for that character). If the selected font can't be used to draw a character, lemonbar will fall back to normal behaviour for that character.
 
 =item B<U>I<color>
 
@@ -98,7 +98,7 @@ Create a clickable area starting from the current position, when the area is cli
 
 Eg. I<%{A:reboot:} Click here to reboot %{A}>
 
-The I<button> field is optional, it defaults to the left button, and it's a number ranging from 1 to 5 which maps to the left, middle, right, scroll up and scroll down movements. Your mileage may vary. 
+The I<button> field is optional, it defaults to the left button, and it's a number ranging from 1 to 5 which maps to the left, middle, right, scroll up and scroll down movements. Your mileage may vary.
 
 Nested clickable areas can trigger different commands.
 
@@ -106,7 +106,7 @@ Eg. I<%{A:reboot:}%{A3:halt:} Left click to reboot, right click to shutdown %{A}
 
 =item B<S>I<dir>
 
-Change the monitor bar is rendering to. I<dir> can be either
+Change the monitor the bar is rendered to. I<dir> can be either
 
 =over
 
@@ -160,7 +160,7 @@ Draw a line under the text.
 
 =head1 OUTPUT
 
-Clicking on an area makes bar output the command to stdout, followed by a newline, allowing the user to pipe it into a script, execute it or simply ignore it. Simple and powerful, that's it.
+Clicking on an area makes lemonbar output the command to stdout, followed by a newline, allowing the user to pipe it into a script, execute it or simply ignore it. Simple and powerful, that's it.
 
 =head1 WWW
 
@@ -168,7 +168,7 @@ L<git repository|https://github.com/LemonBoy/bar>
 
 =head1 AUTHOR
 
-2012-2014 (C) The Lemon Man
+2012-2015 (C) The Lemon Man
 
 Xinerama support was kindly contributed by Stebalien
 
