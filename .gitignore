@@ -1,5 +1,5 @@
 config.h
-bar
+lemonbar
 *.o
 *.swp
 *~
