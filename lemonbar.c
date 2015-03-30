@@ -108,6 +108,7 @@ static bool dock = false;
 static bool topbar = true;
 static int bw = -1, bh = -1, bx = 0, by = 0;
 static int bu = 1; // Underline height
+static int offset_y = 0;
 static rgba_t fgc, bgc, ugc;
 static rgba_t dfgc, dbgc;
 static area_stack_t astack;
@@ -273,7 +274,7 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
         /* Draw the background first */
     fill_rect(mon->pixmap, gc[GC_CLEAR], x, 0, ch_width, bh);
 
-    int y = bh / 2 + cur_font->height / 2- cur_font->descent;
+    int y = bh / 2 + cur_font->height / 2- cur_font->descent + offset_y;
     if (cur_font->xft_ft) {
         XftDrawString16 (xft_draw, &sel_fg, cur_font->xft_ft, x,y, &ch, 1);
     } else {
@@ -1369,11 +1370,11 @@ main (int argc, char **argv)
 
     ugc = fgc;
 
-    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:")) != -1) {
+    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:o:B:F:")) != -1) {
         switch (ch) {
             case 'h':
                 printf ("lemonbar version %s\n", VERSION);
-                printf ("usage: %s [-h | -g | -b | -d | -f | -a | -p | -u | -B | -F]\n"
+                printf ("usage: %s [-h | -g | -b | -d | -f | -a | -p | -u | -o | -B | -F]\n"
                         "\t-h Show this help\n"
                         "\t-g Set the bar geometry {width}x{height}+{xoffset}+{yoffset}\n"
                         "\t-b Put the bar at the bottom of the screen\n"
@@ -1381,6 +1382,7 @@ main (int argc, char **argv)
                         "\t-f Bar font list, comma separated\n"
                         "\t-p Don't close after the data ends\n"
                         "\t-u Set the underline/overline height in pixels\n"
+                        "\t-o Add a vertical offset to the text, it can be negative.\n"
                         "\t-B Set background color in #AARRGGBB\n"
                         "\t-F Set foreground color in #AARRGGBB\n", argv[0]);
                 exit (EXIT_SUCCESS);
@@ -1390,6 +1392,7 @@ main (int argc, char **argv)
             case 'd': dock = true; break;
             case 'f': parse_font_list(optarg); break;
             case 'u': bu = strtoul(optarg, NULL, 10); break;
+            case 'o': offset_y = strtol(optarg, NULL, 10); break;
             case 'B': dbgc = bgc = parse_color(optarg, NULL, (rgba_t)scr->black_pixel); break;
             case 'F': dfgc = fgc = parse_color(optarg, NULL, (rgba_t)scr->white_pixel); break;
         }
