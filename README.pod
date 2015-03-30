@@ -6,7 +6,7 @@ lemonbar - Featherweight lemon-scented bar
 
 =head1 SYNOPSIS
 
-I<lemonbar> [-h | -g I<width>B<x>I<height>B<+>I<x>B<+>I<y> | -b | -d | -f I<font> | -p | -u I<pixel> | -B I<color> | -F I<color>]
+I<lemonbar> [-h | -g I<width>B<x>I<height>B<+>I<x>B<+>I<y> | -b | -d | -f I<font> | -p | -u I<pixel> | -B I<color> | -F I<color> | -o I<offset>]
 
 =head1 DESCRIPTION
 
@@ -51,6 +51,10 @@ Set the background color of the bar. I<color> might be either in hex format (#aa
 =item B<-F> I<color>
 
 Set the foreground color of the bar. Accepts the same color formats as B<-B>.
+
+=item B<-o> I<offset>
+
+Add a vertical offset to the text. I<offset> must be a number and can be negative. I<-o -3> will push the text 3 pixels up.
 
 =back
 
