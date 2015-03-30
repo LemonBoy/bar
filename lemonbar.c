@@ -283,7 +283,7 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
         
         // The coordinates here are those of the baseline
         xcb_poly_text_16_simple(c, mon->pixmap, gc[GC_DRAW],
-                            x, bh / 2 + cur_font->height / 2 - cur_font->descent,
+                            x, y,
                             1, &ch);
     }
 
