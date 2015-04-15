@@ -22,7 +22,7 @@
 
 typedef struct font_t {
     xcb_font_t ptr;
-    int descent, height;
+    int descent, height, width;
     uint16_t char_max;
     uint16_t char_min;
     xcb_charinfo_t *width_lut;
@@ -180,13 +180,18 @@ xcb_void_cookie_t xcb_poly_text_16_simple(xcb_connection_t * c,
     xcb_parts[6].iov_len = -(xcb_parts[4].iov_len + xcb_parts[5].iov_len) & 3;
 
     xcb_ret.sequence = xcb_send_request(c, 0, xcb_parts + 2, &xcb_req);
+
     return xcb_ret;
 }
 
 int
 draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
 {
-    int ch_width = cur_font->width_lut[ch - cur_font->char_min].character_width;
+    int ch_width;
+
+    ch_width = (cur_font->width_lut) ?
+        cur_font->width_lut[ch - cur_font->char_min].character_width:
+        cur_font->width;
 
     switch (align) {
         case ALIGN_C:
@@ -432,10 +437,13 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
 bool
 font_has_glyph (font_t *font, const uint16_t c)
 {
-    return (c >= font->char_min &&
-            c <= font->char_max &&
-            font->width_lut &&
-            font->width_lut[c - font->char_min].character_width);
+    if (c < font->char_min || c > font->char_max)
+        return false;
+
+    if (font->width_lut && font->width_lut[c - font->char_min].character_width == 0)
+        return false;
+
+    return true;
 }
 
 // returns NULL if character cannot be printed
@@ -628,6 +636,7 @@ font_load (const char *str)
     ret->ptr = font;
     ret->descent = font_info->font_descent;
     ret->height = font_info->font_ascent + font_info->font_descent;
+    ret->width = font_info->max_bounds.character_width;
     ret->char_max = font_info->max_byte1 << 8 | font_info->max_char_or_byte2;
     ret->char_min = font_info->min_byte1 << 8 | font_info->min_char_or_byte2;
 
