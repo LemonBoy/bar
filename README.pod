@@ -32,6 +32,10 @@ Dock the bar at the bottom of the screen.
 
 Force docking without asking the window manager. This is needed if the window manager isn't EWMH compliant.
 
+=item B<-e>
+
+Output enter and leave window events on stdout.
+
 =item B<-f> I<font>
 
 Comma separated list of fonts, lemonbar supports a maximum of five fonts (the limit can be tweaked by changing the MAX_FONT_COUNT parameter in the source).
