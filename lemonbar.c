@@ -609,8 +609,8 @@ parse (char *text)
     }
 }
 
-font_t *
-font_load (const char *str)
+void
+font_load (const char *pattern)
 {
     xcb_query_font_cookie_t queryreq;
     xcb_query_font_reply_t *font_info;
@@ -619,16 +619,16 @@ font_load (const char *str)
 
     font = xcb_generate_id(c);
 
-    cookie = xcb_open_font_checked(c, font, strlen(str), str);
+    cookie = xcb_open_font_checked(c, font, strlen(pattern), pattern);
     if (xcb_request_check (c, cookie)) {
-        fprintf(stderr, "Could not load font \"%s\"\n", str);
-        return NULL;
+        fprintf(stderr, "Could not load font \"%s\"\n", pattern);
+        return;
     }
 
     font_t *ret = calloc(1, sizeof(font_t));
 
     if (!ret)
-        return NULL;
+        return;
 
     queryreq = xcb_query_font(c, font);
     font_info = xcb_query_font_reply(c, queryreq, NULL);
@@ -649,7 +649,7 @@ font_load (const char *str)
 
     free(font_info);
 
-    return ret;
+    font_list[font_count++] = ret;
 }
 
 enum {
@@ -1036,48 +1036,6 @@ parse_geometry_string (char *str, int *tmp)
 }
 
 void
-parse_font_list (char *str)
-{
-    char *tok, *end;
-
-    if (!str)
-        return;
-
-    tok = strtok(str, ",");
-
-    while (tok) {
-        if (font_count > MAX_FONT_COUNT - 1) {
-            fprintf(stderr, "Too many fonts; maximum %i\n", MAX_FONT_COUNT);
-            return;
-        }
-
-        // Strip the leading and trailing whitespaces
-        while (isspace(*tok) || iscntrl(*tok))
-            tok++;
-
-        end = tok + strlen(tok) - 1;
-
-        while ((end > tok && isspace(*end)) || iscntrl(*end))
-            end--;
-
-        *(end + 1) = '\0';
-
-        if (tok[0]) {
-            // Load the selected font
-            font_t *font = font_load(tok);
-            if (font)
-                font_list[font_count++] = font;
-        }
-        else
-            fprintf(stderr, "Empty font name, skipping...\n");
-
-        tok = strtok(NULL, ",");
-    }
-}
-
-
-
-void
 xconn (void)
 {
     // Connect to X
@@ -1100,13 +1058,9 @@ xconn (void)
 void
 init (void)
 {
-    // This has to be declared as an array because otherwise the compiler would turn it into a const
-    // string, making strtok choke very hard on this
-    char fallback_font[] = "fixed";
-
     // Try to load a default font
     if (!font_count)
-        parse_font_list(fallback_font);
+        font_load("fixed");
 
     // We tried and failed hard, there's something wrong
     if (!font_count)
@@ -1279,7 +1233,7 @@ main (int argc, char **argv)
             case 'p': permanent = true; break;
             case 'b': topbar = false; break;
             case 'd': dock = true; break;
-            case 'f': parse_font_list(optarg); break;
+            case 'f': font_load(optarg); break;
             case 'u': bu = strtoul(optarg, NULL, 10); break;
             case 'B': dbgc = bgc = parse_color(optarg, NULL, (rgba_t)scr->black_pixel); break;
             case 'F': dfgc = fgc = parse_color(optarg, NULL, (rgba_t)scr->white_pixel); break;

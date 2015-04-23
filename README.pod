@@ -34,7 +34,8 @@ Force docking without asking the window manager. This is needed if the window ma
 
 =item B<-f> I<font>
 
-Comma separated list of fonts, lemonbar supports a maximum of five fonts (the limit can be tweaked by changing the MAX_FONT_COUNT parameter in the source).
+Define the font to load into one of the five slots (the number of slots is hardcoded and can be tweaked by
+changing the MAX_FONT_COUNT parameter in the source code).
 
 =item B<-p>
 
