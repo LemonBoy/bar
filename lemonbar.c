@@ -1223,7 +1223,7 @@ main (int argc, char **argv)
                         "\t-g Set the bar geometry {width}x{height}+{xoffset}+{yoffset}\n"
                         "\t-b Put the bar at the bottom of the screen\n"
                         "\t-d Force docking (use this if your WM isn't EWMH compliant)\n"
-                        "\t-f Bar font list, comma separated\n"
+                        "\t-f Set the font name to use\n"
                         "\t-p Don't close after the data ends\n"
                         "\t-u Set the underline/overline height in pixels\n"
                         "\t-B Set background color in #AARRGGBB\n"
