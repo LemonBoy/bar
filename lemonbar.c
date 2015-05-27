@@ -88,6 +88,7 @@ static monitor_t *monhead, *montail;
 static font_t *font_list[MAX_FONT_COUNT];
 static int font_count = 0;
 static int font_index = -1;
+static int scale_fonts = 0;
 static uint32_t attrs = 0;
 static bool dock = false;
 static bool topbar = true;
@@ -609,6 +610,68 @@ parse (char *text)
     }
 }
 
+char *
+scale_font(const char *name)
+{
+    char *newname;
+    size_t sz;
+    int i, j, field;
+    int res_x, res_y;
+    unsigned long pixel_size = 0L;
+
+    if (!name || !*name)
+        return NULL;
+
+    sz = strlen(name) * 2; /* make big enough to avoid overflows */
+    newname = malloc(sz+1);
+    if (!newname) {
+        fprintf(stderr, "Failed to allocate new scalable fontname\n");
+        exit(EXIT_FAILURE);
+    }
+
+    /* calculate our screen resolution in dots per inch */
+    res_x = scr->width_in_pixels / (scr->width_in_millimeters / 25.4);
+    res_y = scr->height_in_pixels / (scr->height_in_millimeters / 25.4);
+
+    /* copy the font name, changing the scalable fields as we go */
+    for (i = j = field = 0; name[i] && field <= 14; i++) {
+        newname[j++] = name[i];
+        if (name[i] == '-') {
+            field++;
+            switch (field) {
+                case 7:  /* pixel size */
+                    pixel_size = strtoul(&name[i+1], NULL, 10);
+                case 12: /* average width */
+                    newname[j] = '*';
+                    j++;
+                    while (name[i+1] != '-' && name[i+1] != '\0') i++;
+                    break;
+                case 8:  /* point size */
+                    snprintf(&newname[j], sz-j, "%ld", pixel_size * 10);
+                    while (newname[j] != '\0') j++;
+                    while (name[i+1] != '-' && name[i+1] != '\0') i++;
+                    break;
+                case 9:  /* x resolution */
+                case 10: /* y resolution */
+                    /* change from an unspecified resolution to res_x or res_y */
+                    snprintf(&newname[j], sz-j, "%d", (field == 9) ? res_x : res_y);
+                    while (newname[j] != '\0') j++;
+                    while (name[i+1] != '-' && name[i+1] != '\0') i++;
+                    break;
+            }
+        }
+    }
+
+    if (field != 14) {
+        printf("font name has invalid number of fields(%d): %s\n", field, name);
+        return NULL;
+    }
+
+    newname[j] = '\0';
+
+    return newname;
+}
+
 void
 font_load (const char *pattern)
 {
@@ -616,19 +679,32 @@ font_load (const char *pattern)
     xcb_query_font_reply_t *font_info;
     xcb_void_cookie_t cookie;
     xcb_font_t font;
+    int is_scaled = false;
+    char *fontname = NULL;
+
+    if (scale_fonts)
+        fontname = scale_font(pattern);
+
+    if (fontname)
+        is_scaled = true;
+    else
+        fontname = (char *)pattern;
 
     font = xcb_generate_id(c);
 
-    cookie = xcb_open_font_checked(c, font, strlen(pattern), pattern);
+    cookie = xcb_open_font_checked(c, font, strlen(fontname), fontname);
     if (xcb_request_check (c, cookie)) {
-        fprintf(stderr, "Could not load font \"%s\"\n", pattern);
+        fprintf(stderr, "Could not load font \"%s\"\n", fontname);
+        if (is_scaled)
+            free(fontname);
         return;
     }
 
     font_t *ret = calloc(1, sizeof(font_t));
-
-    if (!ret)
-        return;
+    if (!ret) {
+        fprintf(stderr, "Failed to allocate space for font\n");
+        exit(EXIT_FAILURE);
+    }
 
     queryreq = xcb_query_font(c, font);
     font_info = xcb_query_font_reply(c, queryreq, NULL);
@@ -648,6 +724,8 @@ font_load (const char *pattern)
     }
 
     free(font_info);
+    if (is_scaled)
+        free(fontname);
 
     font_list[font_count++] = ret;
 }
@@ -1214,15 +1292,16 @@ main (int argc, char **argv)
 
     ugc = fgc;
 
-    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:")) != -1) {
+    while ((ch = getopt(argc, argv, "hg:bdsf:a:pu:B:F:")) != -1) {
         switch (ch) {
             case 'h':
                 printf ("lemonbar version %s\n", VERSION);
-                printf ("usage: %s [-h | -g | -b | -d | -f | -a | -p | -u | -B | -F]\n"
+                printf ("usage: %s [-h | -g | -b | -d | -s | -f | -a | -p | -u | -B | -F]\n"
                         "\t-h Show this help\n"
                         "\t-g Set the bar geometry {width}x{height}+{xoffset}+{yoffset}\n"
                         "\t-b Put the bar at the bottom of the screen\n"
                         "\t-d Force docking (use this if your WM isn't EWMH compliant)\n"
+                        "\t-s Scale fonts\n"
                         "\t-f Set the font name to use\n"
                         "\t-p Don't close after the data ends\n"
                         "\t-u Set the underline/overline height in pixels\n"
@@ -1233,6 +1312,7 @@ main (int argc, char **argv)
             case 'p': permanent = true; break;
             case 'b': topbar = false; break;
             case 'd': dock = true; break;
+            case 's': scale_fonts = 1; break;
             case 'f': font_load(optarg); break;
             case 'u': bu = strtoul(optarg, NULL, 10); break;
             case 'B': dbgc = bgc = parse_color(optarg, NULL, (rgba_t)scr->black_pixel); break;
