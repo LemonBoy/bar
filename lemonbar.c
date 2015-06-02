@@ -765,6 +765,22 @@ font_load (const char *pattern)
     font_list[font_count++] = ret;
 }
 
+void add_y_offset(int offset) {
+    if (offset_y_count >= MAX_FONT_COUNT) {
+        fprintf(stderr, "Max offset count reached. Could not set offset \"%d\"\n", offset);
+        return;
+    }
+
+    offsets_y[offset_y_count] = strtol(optarg, NULL, 10);
+    if (offset_y_count == 0) {
+        for (int i = 1; i < MAX_FONT_COUNT; ++i) {
+            offsets_y[i] = offsets_y[0];
+        }
+    }
+    ++offset_y_count;
+}
+
+
 enum {
     NET_WM_WINDOW_TYPE,
     NET_WM_WINDOW_TYPE_DOCK,
@@ -1371,14 +1387,7 @@ main (int argc, char **argv)
             case 'd': dock = true; break;
             case 'f': font_load(optarg); break;
             case 'u': bu = strtoul(optarg, NULL, 10); break;
-            case 'o': offsets_y[offset_y_count] = strtol(optarg, NULL, 10);
-                      if (offset_y_count == 0) {
-                          for (int i = 1; i < MAX_FONT_COUNT; ++i) {
-                              offsets_y[i] = offsets_y[0];
-                          }
-                      }
-                      ++offset_y_count;
-                      break;
+            case 'o': add_y_offset(strtol(optarg, NULL, 10)); break;
             case 'B': dbgc = bgc = parse_color(optarg, NULL, (rgba_t)scr->black_pixel); break;
             case 'F': dfgc = fgc = parse_color(optarg, NULL, (rgba_t)scr->white_pixel); break;
         }
