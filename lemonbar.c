@@ -32,7 +32,7 @@ typedef struct font_t {
 
     int ascent;
 
-    int descent, height;
+    int descent, height, width;
     uint16_t char_max;
     uint16_t char_min;
 } font_t;
@@ -211,6 +211,7 @@ xcb_void_cookie_t xcb_poly_text_16_simple(xcb_connection_t * c,
     xcb_parts[6].iov_len = -(xcb_parts[4].iov_len + xcb_parts[5].iov_len) & 3;
 
     xcb_ret.sequence = xcb_send_request(c, 0, xcb_parts + 2, &xcb_req);
+
     return xcb_ret;
 }
 
@@ -252,7 +253,9 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
     if (cur_font->xft_ft) {
         ch_width = xft_char_width(ch, cur_font);
     } else {
-        ch_width = cur_font->width_lut[ch - cur_font->char_min].character_width;
+        ch_width = (cur_font->width_lut) ?
+            cur_font->width_lut[ch - cur_font->char_min].character_width:
+            cur_font->width;
     }
     switch (align) {
         case ALIGN_C:
@@ -509,13 +512,22 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
 bool
 font_has_glyph (font_t *font, const uint16_t c)
 {
-    return ((font->ptr &&
-             c >= font->char_min &&
-             c <= font->char_max &&
-             font->width_lut &&
-             font->width_lut[c - font->char_min].character_width) ||
-             (font->xft_ft && XftCharExists(dpy, font->xft_ft, (FcChar32) c))
-            );
+    if (font->xft_ft) {
+        if (XftCharExists(dpy, font->xft_ft, (FcChar32) c)) {
+            return true;
+        } else {
+            return false;
+        }
+
+    }
+
+    if (c < font->char_min || c > font->char_max)
+        return false;
+
+    if (font->width_lut && font->width_lut[c - font->char_min].character_width == 0)
+        return false;
+
+    return true;
 }
 
 font_t *
@@ -694,8 +706,8 @@ parse (char *text)
     XftDrawDestroy (xft_draw);
 }
 
-font_t *
-font_load (const char *str)
+void
+font_load (const char *pattern)
 {
     xcb_query_font_cookie_t queryreq;
     xcb_query_font_reply_t *font_info;
@@ -707,9 +719,9 @@ font_load (const char *str)
     font_t *ret = calloc(1, sizeof(font_t));
 
     if (!ret)
-        return NULL;
+        return;
 
-    cookie = xcb_open_font_checked(c, font, strlen(str), str);
+    cookie = xcb_open_font_checked(c, font, strlen(pattern), pattern);
     if (!xcb_request_check (c, cookie)) {
         queryreq = xcb_query_font(c, font);
         font_info = xcb_query_font_reply(c, queryreq, NULL);
@@ -718,6 +730,7 @@ font_load (const char *str)
         ret->ptr = font;
         ret->descent = font_info->font_descent;
         ret->height = font_info->font_ascent + font_info->font_descent;
+        ret->width = font_info->max_bounds.character_width;
         ret->char_max = font_info->max_byte1 << 8 | font_info->max_char_or_byte2;
         ret->char_min = font_info->min_byte1 << 8 | font_info->min_char_or_byte2;
         // Copy over the width lut as it's part of font_info
@@ -726,18 +739,18 @@ font_load (const char *str)
             ret->width_lut = malloc(lut_size);
             memcpy(ret->width_lut, xcb_query_font_char_infos(font_info), lut_size);
         }
-
         free(font_info);
-    } else if ((ret->xft_ft = XftFontOpenName (dpy, scr_nbr, str))) {
+    } else if ((ret->xft_ft = XftFontOpenName (dpy, scr_nbr, pattern))) {
         ret->ptr = 0;
         ret->ascent = ret->xft_ft->ascent;
         ret->descent = ret->xft_ft->descent;
         ret->height = ret->ascent + ret->descent;
     } else {
-        fprintf(stderr, "Could not load font %s\n", str);
+        fprintf(stderr, "Could not load font %s\n", pattern);
         return NULL;
     }
-    return ret;
+
+    font_list[font_count++] = ret;
 }
 
 enum {
@@ -1125,48 +1138,6 @@ parse_geometry_string (char *str, int *tmp)
 }
 
 void
-parse_font_list (char *str)
-{
-    char *tok, *end;
-
-    if (!str)
-        return;
-
-    tok = strtok(str, ",");
-
-    while (tok) {
-        if (font_count > MAX_FONT_COUNT - 1) {
-            fprintf(stderr, "Too many fonts; maximum %i\n", MAX_FONT_COUNT);
-            return;
-        }
-
-        // Strip the leading and trailing whitespaces
-        while (isspace(*tok) || iscntrl(*tok))
-            tok++;
-
-        end = tok + strlen(tok) - 1;
-
-        while ((end > tok && isspace(*end)) || iscntrl(*end))
-            end--;
-
-        *(end + 1) = '\0';
-
-        if (tok[0]) {
-            // Load the selected font
-            font_t *font = font_load(tok);
-            if (font)
-                font_list[font_count++] = font;
-        }
-        else
-            fprintf(stderr, "Empty font name, skipping...\n");
-
-        tok = strtok(NULL, ",");
-    }
-}
-
-
-
-void
 xconn (void)
 {
     if ((dpy = XOpenDisplay(0)) == NULL) {
@@ -1197,13 +1168,9 @@ xconn (void)
 void
 init (void)
 {
-    // This has to be declared as an array because otherwise the compiler would turn it into a const
-    // string, making strtok choke very hard on this
-    char fallback_font[] = "fixed";
-
     // Try to load a default font
     if (!font_count)
-        parse_font_list(fallback_font);
+        font_load("fixed");
 
     // We tried and failed hard, there's something wrong
     if (!font_count)
@@ -1379,7 +1346,7 @@ main (int argc, char **argv)
                         "\t-g Set the bar geometry {width}x{height}+{xoffset}+{yoffset}\n"
                         "\t-b Put the bar at the bottom of the screen\n"
                         "\t-d Force docking (use this if your WM isn't EWMH compliant)\n"
-                        "\t-f Bar font list, comma separated\n"
+                        "\t-f Set the font name to use\n"
                         "\t-p Don't close after the data ends\n"
                         "\t-u Set the underline/overline height in pixels\n"
                         "\t-B Set background color in #AARRGGBB\n"
@@ -1390,7 +1357,7 @@ main (int argc, char **argv)
             case 'p': permanent = true; break;
             case 'b': topbar = false; break;
             case 'd': dock = true; break;
-            case 'f': parse_font_list(optarg); break;
+            case 'f': font_load(optarg); break;
             case 'u': bu = strtoul(optarg, NULL, 10); break;
             case 'o': offset_y = strtol(optarg, NULL, 10); break;
             case 'B': dbgc = bgc = parse_color(optarg, NULL, (rgba_t)scr->black_pixel); break;

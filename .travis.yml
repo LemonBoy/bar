@@ -3,5 +3,6 @@ compiler:
     - clang
     - gcc
 before_install:
-    - sudo apt-get install -qq libx11-xcb-dev libxcb-randr0-dev libxcb-xinerama0-dev
+    - sudo apt-get update -qq
+    - sudo apt-get install -y libx11-xcb-dev libxcb-randr0-dev libxcb-xinerama0-dev
 script: make
