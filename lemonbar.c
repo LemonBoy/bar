@@ -103,12 +103,15 @@ static monitor_t *monhead, *montail;
 static font_t *font_list[MAX_FONT_COUNT];
 static int font_count = 0;
 static int font_index = -1;
+static int offsets_y[MAX_FONT_COUNT];
+static int offset_y_count = 0;
+static int offset_y_index = 0;
+
 static uint32_t attrs = 0;
 static bool dock = false;
 static bool topbar = true;
 static int bw = -1, bh = -1, bx = 0, by = 0;
 static int bu = 1; // Underline height
-static int offset_y = 0;
 static rgba_t fgc, bgc, ugc;
 static rgba_t dfgc, dbgc;
 static area_stack_t astack;
@@ -277,7 +280,7 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
         /* Draw the background first */
     fill_rect(mon->pixmap, gc[GC_CLEAR], x, 0, ch_width, bh);
 
-    int y = bh / 2 + cur_font->height / 2- cur_font->descent + offset_y;
+    int y = bh / 2 + cur_font->height / 2- cur_font->descent + offsets_y[offset_y_index];
     if (cur_font->xft_ft) {
         XftDrawString16 (xft_draw, &sel_fg, cur_font->xft_ft, x,y, &ch, 1);
     } else {
@@ -534,14 +537,18 @@ font_t *
 select_drawable_font (const uint16_t c)
 {
     // If the user has specified a font to use, try that first.
-    if (font_index != -1 && font_has_glyph(font_list[font_index - 1], c))
+    if (font_index != -1 && font_has_glyph(font_list[font_index - 1], c)) {
+        offset_y_index = font_index - 1;
         return font_list[font_index - 1];
+    }
 
     // If the end is reached without finding an appropriate font, return NULL.
     // If the font can draw the character, return it.
     for (int i = 0; i < font_count; i++) {
-        if (font_has_glyph(font_list[i], c))
+        if (font_has_glyph(font_list[i], c)) {
+            offset_y_index = i;
             return font_list[i];
+        }
     }
     return NULL;
 }
@@ -1359,7 +1366,14 @@ main (int argc, char **argv)
             case 'd': dock = true; break;
             case 'f': font_load(optarg); break;
             case 'u': bu = strtoul(optarg, NULL, 10); break;
-            case 'o': offset_y = strtol(optarg, NULL, 10); break;
+            case 'o': offsets_y[offset_y_count] = strtol(optarg, NULL, 10);
+                      if (offset_y_count == 0) {
+                          for (int i = 1; i < MAX_FONT_COUNT; ++i) {
+                              offsets_y[i] = offsets_y[0];
+                          }
+                      }
+                      ++offset_y_count;
+                      break;
             case 'B': dbgc = bgc = parse_color(optarg, NULL, (rgba_t)scr->black_pixel); break;
             case 'F': dfgc = fgc = parse_color(optarg, NULL, (rgba_t)scr->white_pixel); break;
         }
