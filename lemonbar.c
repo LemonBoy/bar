@@ -485,7 +485,8 @@ parse (char *text)
         if (*p == '\0' || *p == '\n')
             return;
 
-        if (*p == '%' && p++ && *p == '{' && (block_end = strchr(p++, '}'))) {
+        if (*p == '%' && *(p+1) == '{' && (block_end = strchr(p++, '}'))) {
+            p++;
             while (p < block_end) {
                 while (isspace(*p))
                     p++;
