@@ -621,6 +621,11 @@ parse (char *text)
 void
 font_load (const char *pattern)
 {
+    if (font_count >= MAX_FONT_COUNT) {
+        fprintf(stderr, "Max font count reached. Could not load font \"%s\"\n", pattern);
+        return;
+    }
+
     xcb_query_font_cookie_t queryreq;
     xcb_query_font_reply_t *font_info;
     xcb_void_cookie_t cookie;
