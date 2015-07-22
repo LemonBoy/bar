@@ -540,6 +540,11 @@ parse (char *text)
                               break;
 
                     case 'T':
+                              if(*p == '-') { //Reset to automatic font selection 
+                                  font_index = -1;
+                                  p++;
+                                  break;
+                              }
                               font_index = (int)strtoul(p, &ep, 10);
                               // User-specified 'font_index' ∊ (0,font_count]
                               // Otherwise just fallback to the automatic font selection
