@@ -91,7 +91,7 @@ Set the text foreground color. The parameter I<color> can be I<-> or a color in 
 
 =item B<T>I<index>
 
-Set the font used to draw the following text. The parameter I<index> is a 1-based index of the font list supplied to bar. Any other value (for example I<->) resets the bar to normal behaviour (matching the first font that can be used for that character). If the selected font can't be used to draw a character, lemonbar will fall back to normal behaviour for that character.
+Set the font used to draw the following text. The parameter I<index> can either be I<-> or the 1-based index of the slot which contains the desired font. If the parameter is I<-> lemonbar resets to the normal behavior (matching the first font that can be used for the character). If the selected font can't be used to draw a character, lemonbar will fall back to normal behavior for that character
 
 =item B<U>I<color>
 

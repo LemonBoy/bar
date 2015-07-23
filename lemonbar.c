@@ -641,13 +641,22 @@ parse (char *text)
                               break;
 
                     case 'T':
-                              font_index = (int)strtoul(p, &ep, 10);
-                              // User-specified 'font_index' ∊ (0,font_count]
-                              // Otherwise just fallback to the automatic font selection
-                              if (!font_index || font_index > font_count)
+                              if (*p == '-') { //Reset to automatic font selection 
                                   font_index = -1;
-                              p = ep;
-                              break;
+                                  p++;
+                                  break;
+                              } else if (isdigit(*p)) {
+                                  font_index = (int)strtoul(p, &ep, 10);
+                                  // User-specified 'font_index' ∊ (0,font_count]
+                                  // Otherwise just fallback to the automatic font selection
+                                  if (!font_index || font_index > font_count)
+                                  font_index = -1;
+                                  p = ep;
+                                  break;
+                              } else {
+                                  fprintf(stderr, "Invalid font slot \"%c\"\n", *p++); //Swallow the token
+                                  break;
+                              }
 
                     // In case of error keep parsing after the closing }
                     default:
