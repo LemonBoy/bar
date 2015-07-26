@@ -666,6 +666,7 @@ parse (char *text)
 
                               p++;
                               pos_x = 0;
+                              fill_rect(cur_mon->pixmap, gc[GC_CLEAR], 0, 0, cur_mon->width, bh);
                               break;
                     case 'O':
                               errno = 0;
