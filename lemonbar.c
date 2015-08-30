@@ -29,7 +29,8 @@ typedef struct font_t {
 } font_t;
 
 typedef struct monitor_t {
-    int x, y, width;
+    char *name;
+    int x, y, width, height;
     xcb_window_t window;
     xcb_pixmap_t pixmap;
     struct monitor_t *prev, *next;
@@ -96,6 +97,9 @@ static int bu = 1; // Underline height
 static rgba_t fgc, bgc, ugc;
 static rgba_t dfgc, dbgc;
 static area_stack_t astack;
+
+static int num_outputs = 0;
+static char **output_names = NULL;
 
 void
 update_gc (void)
@@ -527,6 +531,14 @@ parse (char *text)
                               { cur_mon = monhead; }
                               else if (*p == 'l')
                               { cur_mon = montail ? montail : monhead; }
+                              else if (*p == 'n')
+                              { cur_mon = monhead;
+                                while (cur_mon->next) {
+                                    if (cur_mon->name && !strncmp(cur_mon->name, p+1, (block_end-p)-1))
+                                        break;
+                                    cur_mon = cur_mon->next;
+                                }
+                              }
                               else if (isdigit(*p))
                               { cur_mon = monhead;
                                 for (int i = 0; i != *p-'0' && cur_mon->next; i++)
@@ -732,7 +744,7 @@ set_ewmh_atoms (void)
 }
 
 monitor_t *
-monitor_new (int x, int y, int width, int height)
+monitor_new (int x, int y, int width, int height, char *name)
 {
     monitor_t *ret;
 
@@ -742,6 +754,7 @@ monitor_new (int x, int y, int width, int height)
         exit(EXIT_FAILURE);
     }
 
+    ret->name = name;
     ret->x = x;
     ret->y = (topbar ? by : height - bh - by) + y;
     ret->width = width;
@@ -778,33 +791,34 @@ monitor_add (monitor_t *mon)
 }
 
 int
-rect_sort_cb (const void *p1, const void *p2)
+mon_sort_cb (const void *p1, const void *p2)
 {
-    const xcb_rectangle_t *r1 = (xcb_rectangle_t *)p1;
-    const xcb_rectangle_t *r2 = (xcb_rectangle_t *)p2;
+    const monitor_t *m1 = (monitor_t *)p1;
+    const monitor_t *m2 = (monitor_t *)p2;
 
-    if (r1->x < r2->x || r1->y < r2->y)
+    if (m1->x < m2->x || m1->y < m2->y)
         return -1;
-    if (r1->x > r2->x || r1->y > r2->y)
+    if (m1->x > m2->x || m1->y > m2->y)
         return  1;
 
     return 0;
 }
 
 void
-monitor_create_chain (xcb_rectangle_t *rects, const int num)
+monitor_create_chain (monitor_t *mons, const int num)
 {
     int i;
     int width = 0, height = 0;
     int left = bx;
 
-    // Sort before use
-    qsort(rects, num, sizeof(xcb_rectangle_t), rect_sort_cb);
+    // Sort before use, but only if specific outputs were not specified on command line
+    if (!num_outputs)
+        qsort(mons, num, sizeof(monitor_t), mon_sort_cb);
 
     for (i = 0; i < num; i++) {
-        int h = rects[i].y + rects[i].height;
+        int h = mons[i].y + mons[i].height;
         // Accumulated width of all monitors
-        width += rects[i].width;
+        width += mons[i].width;
         // Get height of screen from y_offset + height of lowest monitor
         if (h >= height)
         height = h;
@@ -826,28 +840,29 @@ monitor_create_chain (xcb_rectangle_t *rects, const int num)
     // Left is a positive number or zero therefore monitors with zero width are excluded
     width = bw;
     for (i = 0; i < num; i++) {
-        if (rects[i].y + rects[i].height < by)
+        if (mons[i].y + mons[i].height < by)
             continue;
-        if (rects[i].width > left) {
+        if (mons[i].width > left) {
             monitor_t *mon = monitor_new(
-                    rects[i].x + left,
-                    rects[i].y,
-                    min(width, rects[i].width - left),
-                    rects[i].height);
+                    mons[i].x + left,
+                    mons[i].y,
+                    min(width, mons[i].width - left),
+                    mons[i].height,
+                    mons[i].name);
 
             if (!mon)
                 break;
 
             monitor_add(mon);
 
-            width -= rects[i].width - left;
+            width -= mons[i].width - left;
 
             // No need to check for other monitors
             if (width <= 0)
                 break;
         }
 
-        left -= rects[i].width;
+        left -= mons[i].width;
 
         if (left < 0)
             left = 0;
@@ -879,7 +894,7 @@ get_randr_monitors (void)
         return;
     }
 
-    xcb_rectangle_t rects[num];
+    monitor_t mons[num];
 
     // Get all outputs
     for (i = 0; i < num; i++) {
@@ -891,14 +906,12 @@ get_randr_monitors (void)
         // Output disconnected or not attached to any CRTC ?
         if (!oi_reply || oi_reply->crtc == XCB_NONE || oi_reply->connection != XCB_RANDR_CONNECTION_CONNECTED) {
             free(oi_reply);
-            rects[i].width = 0;
+            mons[i].width = 0;
             continue;
         }
 
         ci_reply = xcb_randr_get_crtc_info_reply(c,
                 xcb_randr_get_crtc_info(c, oi_reply->crtc, XCB_CURRENT_TIME), NULL);
-
-        free(oi_reply);
 
         if (!ci_reply) {
             fprintf(stderr, "Failed to get RandR ctrc info\n");
@@ -906,9 +919,50 @@ get_randr_monitors (void)
             return;
         }
 
-        // There's no need to handle rotated screens here (see #69)
-        rects[i] = (xcb_rectangle_t){ ci_reply->x, ci_reply->y, ci_reply->width, ci_reply->height };
+        if (num_outputs) {
+            for (j = 0; j < num_outputs; j++) {
+                int namelen;
+                uint8_t *str;
+                char *name;
 
+                // if this output name has been allocated, skip it
+                if (!output_names[j])
+                    continue;
+
+                namelen = xcb_randr_get_output_info_name_length(oi_reply);
+                name = malloc(namelen+1);
+
+                if (!name) {
+                    fprintf(stderr, "Failed to allocate randr output name\n");
+                    exit(EXIT_FAILURE);
+                }
+
+                str = xcb_randr_get_output_info_name(oi_reply);
+                memcpy(name, str, namelen);
+                name[namelen] = '\0';
+
+                if (!memcmp(output_names[j], name, namelen)) {
+                    mons[j] = (monitor_t){ name, ci_reply->x, ci_reply->y, ci_reply->width, ci_reply->height, 0, 0, NULL, NULL };
+                    output_names[j] = NULL;
+                    break;
+                }
+                else
+                    free(name);
+            }
+            // if this output is not in the list, skip it
+            if (j == num_outputs) {
+                mons[i].width = 0;
+                free(oi_reply);
+                continue;
+            }
+        }
+        else {
+            // There's no need to handle rotated screens here (see #69)
+            mons[i] = (monitor_t){ NULL, ci_reply->x, ci_reply->y, ci_reply->width, ci_reply->height, 0, 0, NULL, NULL };
+        }
+
+
+        free(oi_reply);
         free(ci_reply);
 
         valid++;
@@ -916,18 +970,21 @@ get_randr_monitors (void)
 
     free(rres_reply);
 
+    if (num_outputs)
+        free(output_names);
+
     // Check for clones and inactive outputs
     for (i = 0; i < num; i++) {
-        if (rects[i].width == 0)
+        if (mons[i].width == 0)
             continue;
 
         for (j = 0; j < num; j++) {
             // Does I contain J ?
 
-            if (i != j && rects[j].width) {
-                if (rects[j].x >= rects[i].x && rects[j].x + rects[j].width <= rects[i].x + rects[i].width &&
-                    rects[j].y >= rects[i].y && rects[j].y + rects[j].height <= rects[i].y + rects[i].height) {
-                    rects[j].width = 0;
+            if (i != j && mons[j].width && !mons[j].name) {
+                if (mons[j].x >= mons[i].x && mons[j].x + mons[j].width <= mons[i].x + mons[i].width &&
+                    mons[j].y >= mons[i].y && mons[j].y + mons[j].height <= mons[i].y + mons[i].height) {
+                    mons[j].width = 0;
                     valid--;
                 }
             }
@@ -939,13 +996,13 @@ get_randr_monitors (void)
         return;
     }
 
-    xcb_rectangle_t r[valid];
+    monitor_t m[valid];
 
     for (i = j = 0; i < num && j < valid; i++)
-        if (rects[i].width != 0)
-            r[j++] = rects[i];
+        if (mons[i].width != 0)
+            m[j++] = mons[i];
 
-    monitor_create_chain(r, valid);
+    monitor_create_chain(m, valid);
 }
 
 void
@@ -955,26 +1012,32 @@ get_xinerama_monitors (void)
     xcb_xinerama_screen_info_iterator_t iter;
     int screens;
 
+    if (num_outputs) {
+        fprintf(stderr, "Using output names with Xinerama is not yet supported\n");
+        return;
+    }
+
     xqs_reply = xcb_xinerama_query_screens_reply(c,
             xcb_xinerama_query_screens_unchecked(c), NULL);
 
     iter = xcb_xinerama_query_screens_screen_info_iterator(xqs_reply);
     screens = iter.rem;
 
-    xcb_rectangle_t rects[screens];
+    monitor_t mons[screens];
 
     // Fetch all the screens first
     for (int i = 0; iter.rem; i++) {
-        rects[i].x = iter.data->x_org;
-        rects[i].y = iter.data->y_org;
-        rects[i].width = iter.data->width;
-        rects[i].height = iter.data->height;
+        mons[i].name = NULL;
+        mons[i].x = iter.data->x_org;
+        mons[i].y = iter.data->y_org;
+        mons[i].width = iter.data->width;
+        mons[i].height = iter.data->height;
         xcb_xinerama_screen_info_next(&iter);
     }
 
     free(xqs_reply);
 
-    monitor_create_chain(rects, screens);
+    monitor_create_chain(mons, screens);
 }
 
 xcb_visualid_t
@@ -1050,6 +1113,20 @@ parse_geometry_string (char *str, int *tmp)
 }
 
 void
+parse_output_string(char *str)
+{
+    if (!str || !*str)
+        return;
+    num_outputs++;
+    output_names = realloc(output_names, num_outputs * sizeof(char *));
+    if (!output_names) {
+        fprintf(stderr, "failed to allocate output name\n");
+        exit(EXIT_FAILURE);
+    }
+    output_names[num_outputs-1] = str;
+}
+
+void
 xconn (void)
 {
     // Connect to X
@@ -1116,6 +1193,10 @@ init (void)
     }
 
     if (!monhead) {
+        if (num_outputs) {
+            fprintf(stderr, "Failed to find any specified outputs\n");
+            exit(EXIT_FAILURE);
+        }
         // If I fits I sits
         if (bw < 0)
             bw = scr->width_in_pixels - bx;
@@ -1131,7 +1212,7 @@ init (void)
         }
 
         // If no RandR outputs or Xinerama screens, fall back to using whole screen
-        monhead = monitor_new(0, 0, bw, scr->height_in_pixels);
+        monhead = monitor_new(0, 0, bw, scr->height_in_pixels, NULL);
     }
 
     if (!monhead)
@@ -1228,13 +1309,14 @@ main (int argc, char **argv)
 
     ugc = fgc;
 
-    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:")) != -1) {
+    while ((ch = getopt(argc, argv, "hg:o:bdf:a:pu:B:F:")) != -1) {
         switch (ch) {
             case 'h':
                 printf ("lemonbar version %s\n", VERSION);
-                printf ("usage: %s [-h | -g | -b | -d | -f | -a | -p | -u | -B | -F]\n"
+                printf ("usage: %s [-h | -g | -o | -b | -d | -f | -a | -p | -u | -B | -F]\n"
                         "\t-h Show this help\n"
                         "\t-g Set the bar geometry {width}x{height}+{xoffset}+{yoffset}\n"
+                        "\t-o Add randr output by name\n"
                         "\t-b Put the bar at the bottom of the screen\n"
                         "\t-d Force docking (use this if your WM isn't EWMH compliant)\n"
                         "\t-f Set the font name to use\n"
@@ -1244,6 +1326,7 @@ main (int argc, char **argv)
                         "\t-F Set foreground color in #AARRGGBB\n", argv[0]);
                 exit (EXIT_SUCCESS);
             case 'g': (void)parse_geometry_string(optarg, geom_v); break;
+            case 'o': (void)parse_output_string(optarg); break;
             case 'p': permanent = true; break;
             case 'b': topbar = false; break;
             case 'd': dock = true; break;
