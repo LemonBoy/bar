@@ -541,7 +541,7 @@ parse (char *text)
                               break;
 
                     case 'T':
-                              if (*p == '-') { //Reset to automatic font selection 
+                              if (*p == '-') { //Reset to automatic font selection
                                   font_index = -1;
                                   p++;
                                   break;
@@ -784,10 +784,15 @@ rect_sort_cb (const void *p1, const void *p2)
     const xcb_rectangle_t *r1 = (xcb_rectangle_t *)p1;
     const xcb_rectangle_t *r2 = (xcb_rectangle_t *)p2;
 
-    if (r1->x < r2->x || r1->y < r2->y)
+    if (r1->x < r2->x || r1->y + r1->height <= r2->y)
+    {
         return -1;
-    if (r1->x > r2->x || r1->y > r2->y)
-        return  1;
+    }
+
+    if (r1->x > r2->x || r1->y + r1->height > r2->y)
+    {
+        return 1;
+    }
 
     return 0;
 }
