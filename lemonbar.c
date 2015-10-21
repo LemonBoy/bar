@@ -581,8 +581,8 @@ parse (char *text)
         if (*p == '\0' || *p == '\n')
 			break;
 
-        if (*p == '%' && *(p+1) == '{' && (block_end = strchr(p+2, '}'))) {
-            p += 2;
+        if (p[0] == '%' && p[1] == '{' && (block_end = strchr(p++, '}'))) {
+            p++;
             while (p < block_end) {
                 while (isspace(*p))
                     p++;
@@ -641,7 +641,7 @@ parse (char *text)
                               break;
 
                     case 'T':
-                              if (*p == '-') { //Reset to automatic font selection 
+                              if (*p == '-') { //Reset to automatic font selection
                                   font_index = -1;
                                   p++;
                                   break;
@@ -910,10 +910,15 @@ rect_sort_cb (const void *p1, const void *p2)
     const xcb_rectangle_t *r1 = (xcb_rectangle_t *)p1;
     const xcb_rectangle_t *r2 = (xcb_rectangle_t *)p2;
 
-    if (r1->x < r2->x || r1->y < r2->y)
+    if (r1->x < r2->x || r1->y + r1->height <= r2->y)
+    {
         return -1;
-    if (r1->x > r2->x || r1->y > r2->y)
-        return  1;
+    }
+
+    if (r1->x > r2->x || r1->y + r1->height > r2->y)
+    {
+        return 1;
+    }
 
     return 0;
 }
