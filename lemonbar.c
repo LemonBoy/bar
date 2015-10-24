@@ -233,9 +233,7 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
 rgba_t
 parse_color (const char *str, char **end, const rgba_t def)
 {
-    xcb_alloc_named_color_reply_t *nc_reply;
     int string_len;
-    rgba_t ret;
     char *ep;
 
     if (!str)
@@ -250,60 +248,60 @@ parse_color (const char *str, char **end, const rgba_t def)
     }
 
     // Hex representation
-    if (str[0] == '#') {
-        errno = 0;
-        rgba_t tmp = (rgba_t)(uint32_t)strtoul(str + 1, &ep, 16);
-
+    if (str[0] != '#') {
         if (end)
-            *end = ep;
+            *end = (char *)str;
 
-        // Some error checking is definitely good
-        if (errno) {
-            fprintf(stderr, "Invalid color specified\n");
-            return def;
-        }
-
-        string_len = ep - (str + 1);
-
-        // If the code is in #rrggbb form then assume it's opaque
-        if (string_len <= 6)
-            tmp.a = 255;
-
-        // Premultiply the alpha in
-        if (tmp.a) {
-            // The components are clamped automagically as the rgba_t is made of uint8_t
-            return (rgba_t){
-                .r = (tmp.r * tmp.a) / 255,
-                .g = (tmp.g * tmp.a) / 255,
-                .b = (tmp.b * tmp.a) / 255,
-                .a = tmp.a,
-            };
-        }
-
-        return (rgba_t)0U;
+        fprintf(stderr, "Invalid color specified\n");
+        return def;
     }
 
-    // Actual color name, resolve it
-    for (string_len = 0; isalpha(str[string_len]); string_len++)
-        ;
-
-    nc_reply = xcb_alloc_named_color_reply(c, xcb_alloc_named_color(c, colormap, string_len, str), NULL);
-
-    if (!nc_reply)
-        fprintf(stderr, "Could not allocate the color \"%.*s\"\n", string_len, str);
-
-    ret = nc_reply?
-        (rgba_t)nc_reply->pixel:
-        def;
-
-    free(nc_reply);
+    errno = 0;
+    rgba_t tmp = (rgba_t)(uint32_t)strtoul(str + 1, &ep, 16);
 
     if (end)
-        *end = (char *)str + string_len;
+        *end = ep;
 
-    return ret;
+    // Some error checking is definitely good
+    if (errno) {
+        fprintf(stderr, "Invalid color specified\n");
+        return def;
+    }
+
+    string_len = ep - (str + 1);
+
+    switch (string_len) {
+        case 3:
+            // Expand the #rgb format into #rrggbb (aa is set to 0xff)
+            tmp.v = (tmp.v & 0xf00) * 0x1100
+                  | (tmp.v & 0x0f0) * 0x0110
+                  | (tmp.v & 0x00f) * 0x0011;
+        case 6:
+            // If the code is in #rrggbb form then assume it's opaque
+            tmp.a = 255;
+            break;
+        case 7:
+        case 8:
+            // Colors in #aarrggbb format, those need no adjustments
+            break;
+        default:
+            fprintf(stderr, "Invalid color specified\n");
+            return def;
+    }
+
+    // Premultiply the alpha in
+    if (tmp.a) {
+        // The components are clamped automagically as the rgba_t is made of uint8_t
+        return (rgba_t){
+            .r = (tmp.r * tmp.a) / 255,
+            .g = (tmp.g * tmp.a) / 255,
+            .b = (tmp.b * tmp.a) / 255,
+            .a = tmp.a,
+        };
+    }
+
+    return (rgba_t)0U;
 }
-
 
 void
 set_attribute (const char modifier, const char attribute)
@@ -1229,8 +1227,8 @@ main (int argc, char **argv)
     xconn();
 
     // B/W combo
-    dbgc = bgc = parse_color("black", NULL, (rgba_t)scr->black_pixel);
-    dfgc = fgc = parse_color("white", NULL, (rgba_t)scr->white_pixel);
+    dbgc = bgc = (rgba_t)scr->black_pixel;
+    dfgc = fgc = (rgba_t)scr->white_pixel;
 
     ugc = fgc;
 
