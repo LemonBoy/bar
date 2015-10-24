@@ -1080,7 +1080,7 @@ xconn (void)
 }
 
 void
-init (void)
+init (char *wm_name)
 {
     // Try to load a default font
     if (!font_count)
@@ -1168,6 +1168,10 @@ init (void)
         // Make sure that the window really gets in the place it's supposed to be
         // Some WM such as Openbox need this
         xcb_configure_window(c, mon->window, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, (const uint32_t []){ mon->x, mon->y });
+
+        // Set the WM_NAME atom to the user specified value
+        if (wm_name)
+            xcb_change_property(c, XCB_PROP_MODE_REPLACE, monhead->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8 ,strlen(wm_name), wm_name);
     }
 
     xcb_flush(c);
@@ -1225,6 +1229,7 @@ main (int argc, char **argv)
     bool permanent = false;
     int geom_v[4] = { -1, -1, 0, 0 };
     int ch, areas;
+    char *wm_name;
 
     // Install the parachute!
     atexit(cleanup);
@@ -1239,12 +1244,13 @@ main (int argc, char **argv)
 
     // A safe default
     areas = 10;
+    wm_name = NULL;
 
-    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:")) != -1) {
+    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:n:")) != -1) {
         switch (ch) {
             case 'h':
                 printf ("lemonbar version %s\n", VERSION);
-                printf ("usage: %s [-h | -g | -b | -d | -f | -a | -p | -u | -B | -F]\n"
+                printf ("usage: %s [-h | -g | -b | -d | -f | -a | -p | -n | -u | -B | -F]\n"
                         "\t-h Show this help\n"
                         "\t-g Set the bar geometry {width}x{height}+{xoffset}+{yoffset}\n"
                         "\t-b Put the bar at the bottom of the screen\n"
@@ -1252,12 +1258,14 @@ main (int argc, char **argv)
                         "\t-f Set the font name to use\n"
                         "\t-a Number of clickable areas available (default is 10)\n"
                         "\t-p Don't close after the data ends\n"
+                        "\t-n Set the WM_NAME atom to the specified value for this bar\n"
                         "\t-u Set the underline/overline height in pixels\n"
                         "\t-B Set background color in #AARRGGBB\n"
                         "\t-F Set foreground color in #AARRGGBB\n", argv[0]);
                 exit (EXIT_SUCCESS);
             case 'g': (void)parse_geometry_string(optarg, geom_v); break;
             case 'p': permanent = true; break;
+            case 'n': wm_name = optarg; break;
             case 'b': topbar = false; break;
             case 'd': dock = true; break;
             case 'f': font_load(optarg); break;
@@ -1293,7 +1301,7 @@ main (int argc, char **argv)
     xconn();
 
     // Do the heavy lifting
-    init();
+    init(wm_name);
     // Get the fd to Xserver
     pollin[1].fd = xcb_get_file_descriptor(c);
 

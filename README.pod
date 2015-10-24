@@ -6,7 +6,7 @@ lemonbar - Featherweight lemon-scented bar
 
 =head1 SYNOPSIS
 
-I<lemonbar> [-h | -g I<width>B<x>I<height>B<+>I<x>B<+>I<y> | -b | -d | -f I<font> | -p | -u I<pixel> | -B I<color> | -F I<color>]
+I<lemonbar> [-h | -g I<width>B<x>I<height>B<+>I<x>B<+>I<y> | -b | -d | -f I<font> | -p | -n | -u I<pixel> | -B I<color> | -F I<color>]
 
 =head1 DESCRIPTION
 
@@ -40,6 +40,10 @@ changing the MAX_FONT_COUNT parameter in the source code).
 =item B<-p>
 
 Make the bar permanent, don't exit after the standard input is closed.
+
+=item B<-n>
+
+Set the WM_NAME atom value for the bar.
 
 =item B<-u> I<pixel>
 
