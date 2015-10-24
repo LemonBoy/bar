@@ -29,7 +29,7 @@ typedef struct font_t {
 } font_t;
 
 typedef struct monitor_t {
-    int x:16, y:16, width:16;
+    int x, y, width;
     xcb_window_t window;
     xcb_pixmap_t pixmap;
     struct monitor_t *prev, *next;
@@ -369,8 +369,10 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
         a = &area_stack.area[i];
 
         // Basic safety checks
-        if (!a->cmd || a->align != align || a->window != mon->window)
+        if (!a->cmd || a->align != align || a->window != mon->window) {
+            fprintf(stderr, "Invalid geometry for the clickable area\n");
             return false;
+        }
 
         const int size = x - a->begin;
 
