@@ -29,15 +29,18 @@ typedef struct font_t {
 } font_t;
 
 typedef struct monitor_t {
-    int x, y, width;
+    int x:16, y:16, width:16;
     xcb_window_t window;
     xcb_pixmap_t pixmap;
     struct monitor_t *prev, *next;
 } monitor_t;
 
 typedef struct area_t {
-    bool active;
-    int begin, end, align, button;
+    unsigned int begin:16;
+    unsigned int end:16;
+    bool active:1;
+    int align:3;
+    int button:3;
     xcb_window_t window;
     char *cmd;
 } area_t;
@@ -52,11 +55,9 @@ typedef union rgba_t {
     uint32_t v;
 } rgba_t;
 
-#define N 20
-
 typedef struct area_stack_t {
-    int pos;
-    area_t slot[N];
+    int at, max;
+    area_t *area;
 } area_stack_t;
 
 enum {
@@ -95,7 +96,7 @@ static int bw = -1, bh = -1, bx = 0, by = 0;
 static int bu = 1; // Underline height
 static rgba_t fgc, bgc, ugc;
 static rgba_t dfgc, dbgc;
-static area_stack_t astack;
+static area_stack_t area_stack;
 
 void
 update_gc (void)
@@ -325,8 +326,8 @@ area_t *
 area_get (xcb_window_t win, const int btn, const int x)
 {
     // Looping backwards ensures that we get the innermost area first
-    for (int i = astack.pos; i >= 0; i--) {
-        area_t *a = &astack.slot[i];
+    for (int i = area_stack.at; i >= 0; i--) {
+        area_t *a = &area_stack.area[i];
         if (a->window == win && a->button == btn
                 && x >= a->begin && x < a->end)
             return a;
@@ -342,8 +343,8 @@ area_shift (xcb_window_t win, const int align, int delta)
     if (align == ALIGN_C)
         delta /= 2;
 
-    for (int i = 0; i < astack.pos; i++) {
-        area_t *a = &astack.slot[i];
+    for (int i = 0; i < area_stack.at; i++) {
+        area_t *a = &area_stack.area[i];
         if (a->window == win && a->align == align && !a->active) {
             a->begin -= delta;
             a->end -= delta;
@@ -363,9 +364,9 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
         *end = str;
 
         // Find most recent unclosed area.
-        for (i = astack.pos - 1; i >= 0 && !astack.slot[i].active; i--)
+        for (i = area_stack.at - 1; i >= 0 && !area_stack.area[i].active; i--)
             ;
-        a = &astack.slot[i];
+        a = &area_stack.area[i];
 
         // Basic safety checks
         if (!a->cmd || a->align != align || a->window != mon->window)
@@ -392,11 +393,12 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
         return true;
     }
 
-    if (astack.pos >= N) {
-        fprintf(stderr, "astack overflow!\n");
+    if (area_stack.at + 1 > area_stack.max) {
+        fprintf(stderr, "Cannot add any more clickable areas (used %d/%d)\n", 
+                area_stack.at, area_stack.max);
         return false;
     }
-    a = &astack.slot[astack.pos++];
+    a = &area_stack.area[area_stack.at++];
 
     // Found the closing : and check if it's just an escaped one
     for (trail = strchr(++str, ':'); trail && trail[-1] == '\\'; trail = strchr(trail + 1, ':'))
@@ -474,7 +476,8 @@ parse (char *text)
     align = ALIGN_L;
     cur_mon = monhead;
 
-    memset(&astack, 0, sizeof(area_stack_t));
+    // Reset the stack position
+    area_stack.at = 0;
 
     for (monitor_t *m = monhead; m != NULL; m = m->next)
         fill_rect(m->pixmap, gc[GC_CLEAR], 0, 0, m->width, bh);
@@ -510,7 +513,8 @@ parse (char *text)
                               // The range is 1-5
                               if (isdigit(*p) && (*p > '0' && *p < '6'))
                                   button = *p++ - '0';
-                              area_add(p, block_end, &p, cur_mon, pos_x, align, button);
+                              if (!area_add(p, block_end, &p, cur_mon, pos_x, align, button))
+                                  return;
                               break;
 
                     case 'B': bgc = parse_color(p, &p, dbgc); update_gc(); break;
@@ -1170,6 +1174,8 @@ init (void)
 void
 cleanup (void)
 {
+    free(area_stack.area);
+
     for (int i = 0; i < font_count; i++) {
         xcb_close_font(c, font_list[i]->ptr);
         free(font_list[i]->width_lut);
@@ -1216,21 +1222,21 @@ main (int argc, char **argv)
     char input[4096] = {0, };
     bool permanent = false;
     int geom_v[4] = { -1, -1, 0, 0 };
-    int ch;
+    int ch, areas;
 
     // Install the parachute!
     atexit(cleanup);
     signal(SIGINT, sighandle);
     signal(SIGTERM, sighandle);
 
-    // Connect to the Xserver and initialize scr
-    xconn();
-
     // B/W combo
-    dbgc = bgc = (rgba_t)scr->black_pixel;
-    dfgc = fgc = (rgba_t)scr->white_pixel;
+    dbgc = bgc = (rgba_t)0x00000000U;
+    dfgc = fgc = (rgba_t)0xffffffffU;
 
     ugc = fgc;
+
+    // A safe default
+    areas = 10;
 
     while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:")) != -1) {
         switch (ch) {
@@ -1242,6 +1248,7 @@ main (int argc, char **argv)
                         "\t-b Put the bar at the bottom of the screen\n"
                         "\t-d Force docking (use this if your WM isn't EWMH compliant)\n"
                         "\t-f Set the font name to use\n"
+                        "\t-a Number of clickable areas available (default is 10)\n"
                         "\t-p Don't close after the data ends\n"
                         "\t-u Set the underline/overline height in pixels\n"
                         "\t-B Set background color in #AARRGGBB\n"
@@ -1253,16 +1260,35 @@ main (int argc, char **argv)
             case 'd': dock = true; break;
             case 'f': font_load(optarg); break;
             case 'u': bu = strtoul(optarg, NULL, 10); break;
-            case 'B': dbgc = bgc = parse_color(optarg, NULL, (rgba_t)scr->black_pixel); break;
-            case 'F': dfgc = fgc = parse_color(optarg, NULL, (rgba_t)scr->white_pixel); break;
+            case 'B': dbgc = bgc = parse_color(optarg, NULL, (rgba_t)0x00000000U); break;
+            case 'F': dfgc = fgc = parse_color(optarg, NULL, (rgba_t)0xffffffffU); break;
+            case 'a': areas = strtoul(optarg, NULL, 10); break;
         }
     }
+
+    // Initialize the stack holding the clickable areas
+    area_stack.at = 0;
+    area_stack.max = areas;
+    if (areas) {
+        area_stack.area = calloc(areas, sizeof(area_t));
+
+        if (!area_stack.area) {
+            fprintf(stderr, "Could not allocate enough memory for %d clickable areas, try lowering the number\n", areas);
+            return EXIT_FAILURE;
+        }
+    }
+    else
+        area_stack.area = NULL;
+
 
     // Copy the geometry values in place
     bw = geom_v[0];
     bh = geom_v[1];
     bx = geom_v[2];
     by = geom_v[3];
+
+    // Connect to the Xserver and initialize scr
+    xconn();
 
     // Do the heavy lifting
     init();
