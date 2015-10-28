@@ -1246,6 +1246,9 @@ main (int argc, char **argv)
     areas = 10;
     wm_name = NULL;
 
+    // Connect to the Xserver and initialize scr
+    xconn();
+
     while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:n:")) != -1) {
         switch (ch) {
             case 'h':
@@ -1296,9 +1299,6 @@ main (int argc, char **argv)
     bh = geom_v[1];
     bx = geom_v[2];
     by = geom_v[3];
-
-    // Connect to the Xserver and initialize scr
-    xconn();
 
     // Do the heavy lifting
     init(wm_name);
