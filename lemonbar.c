@@ -45,8 +45,11 @@ typedef struct monitor_t {
 } monitor_t;
 
 typedef struct area_t {
-    bool active;
-    int begin, end, align, button;
+    unsigned int begin:16;
+    unsigned int end:16;
+    bool active:1;
+    int align:3;
+    int button:3;
     xcb_window_t window;
     char *cmd;
 } area_t;
@@ -61,11 +64,9 @@ typedef union rgba_t {
     uint32_t v;
 } rgba_t;
 
-#define N 20
-
 typedef struct area_stack_t {
-    int pos;
-    area_t slot[N];
+    int at, max;
+    area_t *area;
 } area_stack_t;
 
 enum {
@@ -114,7 +115,7 @@ static int bw = -1, bh = -1, bx = 0, by = 0;
 static int bu = 1; // Underline height
 static rgba_t fgc, bgc, ugc;
 static rgba_t dfgc, dbgc;
-static area_stack_t astack;
+static area_stack_t area_stack;
 
 static XftColor sel_fg;
 static XftDraw *xft_draw;
@@ -305,9 +306,7 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
 rgba_t
 parse_color (const char *str, char **end, const rgba_t def)
 {
-    xcb_alloc_named_color_reply_t *nc_reply;
     int string_len;
-    rgba_t ret;
     char *ep;
 
     if (!str)
@@ -322,60 +321,60 @@ parse_color (const char *str, char **end, const rgba_t def)
     }
 
     // Hex representation
-    if (str[0] == '#') {
-        errno = 0;
-        rgba_t tmp = (rgba_t)(uint32_t)strtoul(str + 1, &ep, 16);
-
+    if (str[0] != '#') {
         if (end)
-            *end = ep;
+            *end = (char *)str;
 
-        // Some error checking is definitely good
-        if (errno) {
-            fprintf(stderr, "Invalid color specified\n");
-            return def;
-        }
-
-        string_len = ep - (str + 1);
-
-        // If the code is in #rrggbb form then assume it's opaque
-        if (string_len <= 6)
-            tmp.a = 255;
-
-        // Premultiply the alpha in
-        if (tmp.a) {
-            // The components are clamped automagically as the rgba_t is made of uint8_t
-            return (rgba_t){
-                .r = (tmp.r * tmp.a) / 255,
-                .g = (tmp.g * tmp.a) / 255,
-                .b = (tmp.b * tmp.a) / 255,
-                .a = tmp.a,
-            };
-        }
-
-        return (rgba_t)0U;
+        fprintf(stderr, "Invalid color specified\n");
+        return def;
     }
 
-    // Actual color name, resolve it
-    for (string_len = 0; isalpha(str[string_len]); string_len++)
-        ;
-
-    nc_reply = xcb_alloc_named_color_reply(c, xcb_alloc_named_color(c, colormap, string_len, str), NULL);
-
-    if (!nc_reply)
-        fprintf(stderr, "Could not allocate the color \"%.*s\"\n", string_len, str);
-
-    ret = nc_reply?
-        (rgba_t)nc_reply->pixel:
-        def;
-
-    free(nc_reply);
+    errno = 0;
+    rgba_t tmp = (rgba_t)(uint32_t)strtoul(str + 1, &ep, 16);
 
     if (end)
-        *end = (char *)str + string_len;
+        *end = ep;
 
-    return ret;
+    // Some error checking is definitely good
+    if (errno) {
+        fprintf(stderr, "Invalid color specified\n");
+        return def;
+    }
+
+    string_len = ep - (str + 1);
+
+    switch (string_len) {
+        case 3:
+            // Expand the #rgb format into #rrggbb (aa is set to 0xff)
+            tmp.v = (tmp.v & 0xf00) * 0x1100
+                  | (tmp.v & 0x0f0) * 0x0110
+                  | (tmp.v & 0x00f) * 0x0011;
+        case 6:
+            // If the code is in #rrggbb form then assume it's opaque
+            tmp.a = 255;
+            break;
+        case 7:
+        case 8:
+            // Colors in #aarrggbb format, those need no adjustments
+            break;
+        default:
+            fprintf(stderr, "Invalid color specified\n");
+            return def;
+    }
+
+    // Premultiply the alpha in
+    if (tmp.a) {
+        // The components are clamped automagically as the rgba_t is made of uint8_t
+        return (rgba_t){
+            .r = (tmp.r * tmp.a) / 255,
+            .g = (tmp.g * tmp.a) / 255,
+            .b = (tmp.b * tmp.a) / 255,
+            .a = tmp.a,
+        };
+    }
+
+    return (rgba_t)0U;
 }
-
 
 void
 set_attribute (const char modifier, const char attribute)
@@ -405,8 +404,8 @@ area_t *
 area_get (xcb_window_t win, const int btn, const int x)
 {
     // Looping backwards ensures that we get the innermost area first
-    for (int i = astack.pos; i >= 0; i--) {
-        area_t *a = &astack.slot[i];
+    for (int i = area_stack.at; i >= 0; i--) {
+        area_t *a = &area_stack.area[i];
         if (a->window == win && a->button == btn
                 && x >= a->begin && x < a->end)
             return a;
@@ -422,8 +421,8 @@ area_shift (xcb_window_t win, const int align, int delta)
     if (align == ALIGN_C)
         delta /= 2;
 
-    for (int i = 0; i < astack.pos; i++) {
-        area_t *a = &astack.slot[i];
+    for (int i = 0; i < area_stack.at; i++) {
+        area_t *a = &area_stack.area[i];
         if (a->window == win && a->align == align && !a->active) {
             a->begin -= delta;
             a->end -= delta;
@@ -443,13 +442,15 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
         *end = str;
 
         // Find most recent unclosed area.
-        for (i = astack.pos - 1; i >= 0 && !astack.slot[i].active; i--)
+        for (i = area_stack.at - 1; i >= 0 && !area_stack.area[i].active; i--)
             ;
-        a = &astack.slot[i];
+        a = &area_stack.area[i];
 
         // Basic safety checks
-        if (!a->cmd || a->align != align || a->window != mon->window)
+        if (!a->cmd || a->align != align || a->window != mon->window) {
+            fprintf(stderr, "Invalid geometry for the clickable area\n");
             return false;
+        }
 
         const int size = x - a->begin;
 
@@ -472,11 +473,12 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
         return true;
     }
 
-    if (astack.pos >= N) {
-        fprintf(stderr, "astack overflow!\n");
+    if (area_stack.at + 1 > area_stack.max) {
+        fprintf(stderr, "Cannot add any more clickable areas (used %d/%d)\n", 
+                area_stack.at, area_stack.max);
         return false;
     }
-    a = &astack.slot[astack.pos++];
+    a = &area_stack.area[area_stack.at++];
 
     // Found the closing : and check if it's just an escaped one
     for (trail = strchr(++str, ':'); trail && trail[-1] == '\\'; trail = strchr(trail + 1, ':'))
@@ -567,7 +569,8 @@ parse (char *text)
     align = ALIGN_L;
     cur_mon = monhead;
 
-    memset(&astack, 0, sizeof(area_stack_t));
+    // Reset the stack position
+    area_stack.at = 0;
 
     for (monitor_t *m = monhead; m != NULL; m = m->next)
         fill_rect(m->pixmap, gc[GC_CLEAR], 0, 0, m->width, bh);
@@ -608,7 +611,8 @@ parse (char *text)
                               // The range is 1-5
                               if (isdigit(*p) && (*p > '0' && *p < '6'))
                                   button = *p++ - '0';
-                              area_add(p, block_end, &p, cur_mon, pos_x, align, button);
+                              if (!area_add(p, block_end, &p, cur_mon, pos_x, align, button))
+                                  return;
                               break;
 
                     case 'B': bgc = parse_color(p, &p, dbgc); update_gc(); break;
@@ -1208,7 +1212,7 @@ xconn (void)
 }
 
 void
-init (void)
+init (char *wm_name)
 {
     // Try to load a default font
     if (!font_count)
@@ -1296,6 +1300,10 @@ init (void)
         // Make sure that the window really gets in the place it's supposed to be
         // Some WM such as Openbox need this
         xcb_configure_window(c, mon->window, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, (const uint32_t []){ mon->x, mon->y });
+
+        // Set the WM_NAME atom to the user specified value
+        if (wm_name)
+            xcb_change_property(c, XCB_PROP_MODE_REPLACE, monhead->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8 ,strlen(wm_name), wm_name);
     }
 
     char color[] = "#ffffff";
@@ -1311,6 +1319,7 @@ init (void)
 void
 cleanup (void)
 {
+    free(area_stack.area);
     for (int i = 0; font_list[i]; i++) {
         if (font_list[i]->xft_ft) {
             XftFontClose (dpy, font_list[i]->xft_ft);
@@ -1363,33 +1372,39 @@ main (int argc, char **argv)
     char input[4096] = {0, };
     bool permanent = false;
     int geom_v[4] = { -1, -1, 0, 0 };
-    int ch;
+    int ch, areas;
+    char *wm_name;
 
     // Install the parachute!
     atexit(cleanup);
     signal(SIGINT, sighandle);
     signal(SIGTERM, sighandle);
 
+    // B/W combo
+    dbgc = bgc = (rgba_t)0x00000000U;
+    dfgc = fgc = (rgba_t)0xffffffffU;
+
+    ugc = fgc;
+    // A safe default
+    areas = 10;
+    wm_name = NULL;
+
     // Connect to the Xserver and initialize scr
     xconn();
 
-    // B/W combo
-    dbgc = bgc = parse_color("black", NULL, (rgba_t)scr->black_pixel);
-    dfgc = fgc = parse_color("white", NULL, (rgba_t)scr->white_pixel);
-
-    ugc = fgc;
-
-    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:o:B:F:")) != -1) {
+    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:n:o:")) != -1) {
         switch (ch) {
             case 'h':
                 printf ("lemonbar version %s\n", VERSION);
-                printf ("usage: %s [-h | -g | -b | -d | -f | -a | -p | -u | -B | -F | -o]\n"
+                printf ("usage: %s [-h | -g | -b | -d | -f | -a | -p | -n | -u | -B | -F]\n"
                         "\t-h Show this help\n"
                         "\t-g Set the bar geometry {width}x{height}+{xoffset}+{yoffset}\n"
                         "\t-b Put the bar at the bottom of the screen\n"
                         "\t-d Force docking (use this if your WM isn't EWMH compliant)\n"
                         "\t-f Set the font name to use\n"
+                        "\t-a Number of clickable areas available (default is 10)\n"
                         "\t-p Don't close after the data ends\n"
+                        "\t-n Set the WM_NAME atom to the specified value for this bar\n"
                         "\t-u Set the underline/overline height in pixels\n"
                         "\t-B Set background color in #AARRGGBB\n"
                         "\t-F Set foreground color in #AARRGGBB\n"
@@ -1397,15 +1412,32 @@ main (int argc, char **argv)
                 exit (EXIT_SUCCESS);
             case 'g': (void)parse_geometry_string(optarg, geom_v); break;
             case 'p': permanent = true; break;
+            case 'n': wm_name = optarg; break;
             case 'b': topbar = false; break;
             case 'd': dock = true; break;
             case 'f': font_load(optarg); break;
             case 'u': bu = strtoul(optarg, NULL, 10); break;
             case 'o': add_y_offset(strtol(optarg, NULL, 10)); break;
-            case 'B': dbgc = bgc = parse_color(optarg, NULL, (rgba_t)scr->black_pixel); break;
-            case 'F': dfgc = fgc = parse_color(optarg, NULL, (rgba_t)scr->white_pixel); break;
+            case 'B': dbgc = bgc = parse_color(optarg, NULL, (rgba_t)0x00000000U); break;
+            case 'F': dfgc = fgc = parse_color(optarg, NULL, (rgba_t)0xffffffffU); break;
+            case 'a': areas = strtoul(optarg, NULL, 10); break;
         }
     }
+
+    // Initialize the stack holding the clickable areas
+    area_stack.at = 0;
+    area_stack.max = areas;
+    if (areas) {
+        area_stack.area = calloc(areas, sizeof(area_t));
+
+        if (!area_stack.area) {
+            fprintf(stderr, "Could not allocate enough memory for %d clickable areas, try lowering the number\n", areas);
+            return EXIT_FAILURE;
+        }
+    }
+    else
+        area_stack.area = NULL;
+
 
     // Copy the geometry values in place
     bw = geom_v[0];
@@ -1414,7 +1446,7 @@ main (int argc, char **argv)
     by = geom_v[3];
 
     // Do the heavy lifting
-    init();
+    init(wm_name);
     // Get the fd to Xserver
     pollin[1].fd = xcb_get_file_descriptor(c);
     for (;;) {

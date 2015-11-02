@@ -6,7 +6,7 @@ lemonbar - Featherweight lemon-scented bar
 
 =head1 SYNOPSIS
 
-I<lemonbar> [-h | -g I<width>B<x>I<height>B<+>I<x>B<+>I<y> | -b | -d | -f I<font> | -p | -u I<pixel> | -B I<color> | -F I<color> | -o I<offset>]
+I<lemonbar> [-h | -g I<width>B<x>I<height>B<+>I<x>B<+>I<y> | -b | -d | -f I<font> | -p | -n I<name> | -u I<pixel> | -B I<color> | -F I<color> | -o I<offset>]
 
 =head1 DESCRIPTION
 
@@ -41,13 +41,17 @@ changing the MAX_FONT_COUNT parameter in the source code).
 
 Make the bar permanent, don't exit after the standard input is closed.
 
+=item B<-n> I<name>
+
+Set the WM_NAME atom value for the bar.
+
 =item B<-u> I<pixel>
 
 Sets the underline width in pixels. The default is 1.
 
 =item B<-B> I<color>
 
-Set the background color of the bar. I<color> might be either in hex format (#aarrggbb) or in the symbolic name format (eg. white, indianred, darkgray). If no compositor such as compton or xcompmgr is running the alpha channel is silently ignored.
+Set the background color of the bar. I<color> must be specified in the hex format (#aarrggbb, #rrggbb, #rgb). If no compositor such as compton or xcompmgr is running the alpha channel is silently ignored.
 
 =item B<-F> I<color>
 
