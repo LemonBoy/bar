@@ -40,7 +40,7 @@ typedef struct area_t {
     unsigned int end:16;
     bool active:1;
     int align:3;
-    int button:3;
+    int button;
     xcb_window_t window;
     char *cmd;
 } area_t;
