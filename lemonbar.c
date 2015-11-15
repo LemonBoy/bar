@@ -772,7 +772,7 @@ font_load (const char *pattern)
         ret->height = ret->ascent + ret->descent;
     } else {
         fprintf(stderr, "Could not load font %s\n", pattern);
-        return NULL;
+        return;
     }
 
     font_list[font_count++] = ret;
