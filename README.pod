@@ -37,6 +37,10 @@ Force docking without asking the window manager. This is needed if the window ma
 Define the font to load into one of the five slots (the number of slots is hardcoded and can be tweaked by
 changing the MAX_FONT_COUNT parameter in the source code).
 
+=item B<-a> I<number>
+
+Set number of clickable areas (default is 10)
+
 =item B<-p>
 
 Make the bar permanent, don't exit after the standard input is closed.
