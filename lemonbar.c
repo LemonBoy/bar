@@ -598,7 +598,7 @@ parse (char *text)
                 ucs = 0xfffd;
                 p += 5;
             }
-            // Siz byte utf8 sequence
+            // Six byte utf8 sequence
             else if ((utf[0] & 0xfe) == 0xfc) {
                 ucs = 0xfffd;
                 p += 6;
