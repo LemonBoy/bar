@@ -326,10 +326,9 @@ area_t *
 area_get (xcb_window_t win, const int btn, const int x)
 {
     // Looping backwards ensures that we get the innermost area first
-    for (int i = area_stack.at; i >= 0; i--) {
+    for (int i = area_stack.at - 1; i >= 0; i--) {
         area_t *a = &area_stack.area[i];
-        if (a->window == win && a->button == btn
-                && x >= a->begin && x < a->end)
+        if (a->window == win && a->button == btn && x >= a->begin && x < a->end)
             return a;
     }
     return NULL;
