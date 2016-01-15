@@ -1395,7 +1395,7 @@ main (int argc, char **argv)
     while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:n:o:")) != -1) {
         switch (ch) {
             case 'h':
-                printf ("lemonbar version %s\n", VERSION);
+                printf ("lemonbar version %s patched with XFT support\n", VERSION);
                 printf ("usage: %s [-h | -g | -b | -d | -f | -a | -p | -n | -u | -B | -F]\n"
                         "\t-h Show this help\n"
                         "\t-g Set the bar geometry {width}x{height}+{xoffset}+{yoffset}\n"
