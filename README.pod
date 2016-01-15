@@ -107,7 +107,7 @@ Set the text underline color. The parameter I<color> can be I<-> or a color in o
 
 =item B<A>I<button>:I<command>:
 
-Create a clickable area starting from the current position, when the area is clicked I<command> is executed. The area is closed when a B<A> token, not followed by : is encountered.
+Create a clickable area starting from the current position, when the area is clicked I<command> is printed on stdout. The area is closed when a B<A> token, not followed by : is encountered.
 
 Eg. I<%{A:reboot:} Click here to reboot %{A}>
 
