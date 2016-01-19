@@ -95,7 +95,7 @@ static bool topbar = true;
 static int bw = -1, bh = -1, bx = 0, by = 0;
 static int bu = 1; // Underline height
 static rgba_t fgc, bgc, ugc;
-static rgba_t dfgc, dbgc;
+static rgba_t dfgc, dbgc, dugc;
 static area_stack_t area_stack;
 
 void
@@ -520,7 +520,7 @@ parse (char *text)
 
                     case 'B': bgc = parse_color(p, &p, dbgc); update_gc(); break;
                     case 'F': fgc = parse_color(p, &p, dfgc); update_gc(); break;
-                    case 'U': ugc = parse_color(p, &p, dbgc); update_gc(); break;
+                    case 'U': ugc = parse_color(p, &p, dugc); update_gc(); break;
 
                     case 'S':
                               if (*p == '+' && cur_mon->next)
@@ -1238,8 +1238,7 @@ main (int argc, char **argv)
     // B/W combo
     dbgc = bgc = (rgba_t)0x00000000U;
     dfgc = fgc = (rgba_t)0xffffffffU;
-
-    ugc = fgc;
+    dugc = ugc = fgc;
 
     // A safe default
     areas = 10;
@@ -1248,7 +1247,7 @@ main (int argc, char **argv)
     // Connect to the Xserver and initialize scr
     xconn();
 
-    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:n:")) != -1) {
+    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:U:n:")) != -1) {
         switch (ch) {
             case 'h':
                 printf ("lemonbar version %s\n", VERSION);
@@ -1274,6 +1273,7 @@ main (int argc, char **argv)
             case 'u': bu = strtoul(optarg, NULL, 10); break;
             case 'B': dbgc = bgc = parse_color(optarg, NULL, (rgba_t)0x00000000U); break;
             case 'F': dfgc = fgc = parse_color(optarg, NULL, (rgba_t)0xffffffffU); break;
+            case 'U': dugc = ugc = parse_color(optarg, NULL, fgc); break;
             case 'a': areas = strtoul(optarg, NULL, 10); break;
         }
     }
