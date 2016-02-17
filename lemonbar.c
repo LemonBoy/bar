@@ -114,7 +114,7 @@ static bool topbar = true;
 static int bw = -1, bh = -1, bx = 0, by = 0;
 static int bu = 1; // Underline height
 static rgba_t fgc, bgc, ugc;
-static rgba_t dfgc, dbgc;
+static rgba_t dfgc, dbgc, dugc;
 static area_stack_t area_stack;
 
 static XftColor sel_fg;
@@ -250,17 +250,8 @@ int xft_char_width (uint16_t ch, font_t *cur_font)
 }
 
 int
-draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
+shift (monitor_t *mon, int x, int align, int ch_width)
 {
-    int ch_width;
-
-    if (cur_font->xft_ft) {
-        ch_width = xft_char_width(ch, cur_font);
-    } else {
-        ch_width = (cur_font->width_lut) ?
-            cur_font->width_lut[ch - cur_font->char_min].character_width:
-            cur_font->width;
-    }
     switch (align) {
         case ALIGN_C:
             xcb_copy_area(c, mon->pixmap, mon->pixmap, gc[GC_DRAW],
@@ -280,6 +271,40 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
     
         /* Draw the background first */
     fill_rect(mon->pixmap, gc[GC_CLEAR], x, 0, ch_width, bh);
+    return x;
+}
+
+void
+draw_lines (monitor_t *mon, int x, int w)
+{
+    /* We can render both at the same time */
+    if (attrs & ATTR_OVERL)
+        fill_rect(mon->pixmap, gc[GC_ATTR], x, 0, w, bu);
+    if (attrs & ATTR_UNDERL)
+        fill_rect(mon->pixmap, gc[GC_ATTR], x, bh - bu, w, bu);
+}
+
+void
+draw_shift (monitor_t *mon, int x, int align, int w)
+{
+    x = shift(mon, x, align, w);
+    draw_lines(mon, x, w);
+}
+
+int
+draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
+{
+    int ch_width;
+
+    if (cur_font->xft_ft) {
+        ch_width = xft_char_width(ch, cur_font);
+    } else {
+        ch_width = (cur_font->width_lut) ?
+            cur_font->width_lut[ch - cur_font->char_min].character_width:
+            cur_font->width;
+    }
+
+    x = shift(mon, x, align, ch_width);
 
     int y = bh / 2 + cur_font->height / 2- cur_font->descent + offsets_y[offset_y_index];
     if (cur_font->xft_ft) {
@@ -294,11 +319,7 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
                             1, &ch);
     }
 
-    // We can render both at the same time
-    if (attrs & ATTR_OVERL)
-        fill_rect(mon->pixmap, gc[GC_ATTR], x, 0, ch_width, bu);
-    if (attrs & ATTR_UNDERL)
-        fill_rect(mon->pixmap, gc[GC_ATTR], x, bh - bu, ch_width, bu);
+    draw_lines(mon, x, ch_width);
 
     return ch_width;
 }
@@ -586,6 +607,7 @@ parse (char *text)
         if (p[0] == '%' && p[1] == '{' && (block_end = strchr(p++, '}'))) {
             p++;
             while (p < block_end) {
+                int w;
                 while (isspace(*p))
                     p++;
 
@@ -616,7 +638,7 @@ parse (char *text)
 
                     case 'B': bgc = parse_color(p, &p, dbgc); update_gc(); break;
                     case 'F': fgc = parse_color(p, &p, dfgc); update_gc(); break;
-                    case 'U': ugc = parse_color(p, &p, dbgc); update_gc(); break;
+                    case 'U': ugc = parse_color(p, &p, dugc); update_gc(); break;
 
                     case 'S':
                               if (*p == '+' && cur_mon->next)
@@ -641,6 +663,17 @@ parse (char *text)
 
                               p++;
                               pos_x = 0;
+                              break;
+                    case 'O':
+                              errno = 0;
+                              w = (int) strtoul(p, &p, 10);
+                              if (errno)
+                                  continue;
+
+                              draw_shift(cur_mon, pos_x, align, w);
+
+                              pos_x += w;
+                              area_shift(cur_mon->window, align, w);
                               break;
 
                     case 'T':
@@ -1384,7 +1417,8 @@ main (int argc, char **argv)
     dbgc = bgc = (rgba_t)0x00000000U;
     dfgc = fgc = (rgba_t)0xffffffffU;
 
-    ugc = fgc;
+    dugc = ugc = fgc;
+
     // A safe default
     areas = 10;
     wm_name = NULL;
@@ -1392,7 +1426,7 @@ main (int argc, char **argv)
     // Connect to the Xserver and initialize scr
     xconn();
 
-    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:n:o:")) != -1) {
+    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:U:n:o:")) != -1) {
         switch (ch) {
             case 'h':
                 printf ("lemonbar version %s patched with XFT support\n", VERSION);
@@ -1420,6 +1454,7 @@ main (int argc, char **argv)
             case 'o': add_y_offset(strtol(optarg, NULL, 10)); break;
             case 'B': dbgc = bgc = parse_color(optarg, NULL, (rgba_t)0x00000000U); break;
             case 'F': dfgc = fgc = parse_color(optarg, NULL, (rgba_t)0xffffffffU); break;
+            case 'U': dugc = ugc = parse_color(optarg, NULL, fgc); break;
             case 'a': areas = strtoul(optarg, NULL, 10); break;
         }
     }

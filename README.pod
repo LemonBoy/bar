@@ -6,7 +6,7 @@ lemonbar - Featherweight lemon-scented bar
 
 =head1 SYNOPSIS
 
-I<lemonbar> [-h | -g I<width>B<x>I<height>B<+>I<x>B<+>I<y> | -b | -d | -f I<font> | -p | -n I<name> | -u I<pixel> | -B I<color> | -F I<color> | -o I<offset>]
+I<lemonbar> [-h | -g I<width>B<x>I<height>B<+>I<x>B<+>I<y> | -b | -d | -f I<font> | -p | -n I<name> | -u I<pixel> | -B I<color> | -F I<color> | -U I<color> | -o I<offset> ]
 
 =head1 DESCRIPTION
 
@@ -65,6 +65,10 @@ Set the foreground color of the bar. Accepts the same color formats as B<-B>.
 
 Add a vertical offset to the text. I<offset> must be a number and can be negative. I<-o -3> will push the text 3 pixels up.
 
+=item B<-U> I<color>
+
+Set the underline color of the bar. Accepts the same color formats as B<-B>.
+
 =back
 
 =head1 FORMATTING
@@ -88,6 +92,10 @@ Aligns the following text to the center of the screen.
 =item B<r>
 
 Aligns the following text to the right side of the screen.
+
+=item B<O>I<width>
+
+Offset the current position by I<width> pixels in the alignment direction.
 
 =item B<B>I<color>
 
