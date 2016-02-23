@@ -22,7 +22,7 @@
 
 typedef struct font_t {
     xcb_font_t ptr;
-    int descent, height;
+    int descent, height, width;
     uint16_t char_max;
     uint16_t char_min;
     xcb_charinfo_t *width_lut;
@@ -36,8 +36,11 @@ typedef struct monitor_t {
 } monitor_t;
 
 typedef struct area_t {
-    bool active;
-    int begin, end, align, button;
+    unsigned int begin:16;
+    unsigned int end:16;
+    bool active:1;
+    int align:3;
+    unsigned int button:3;
     xcb_window_t window;
     char *cmd;
 } area_t;
@@ -52,11 +55,9 @@ typedef union rgba_t {
     uint32_t v;
 } rgba_t;
 
-#define N 20
-
 typedef struct area_stack_t {
-    int pos;
-    area_t slot[N];
+    int at, max;
+    area_t *area;
 } area_stack_t;
 
 enum {
@@ -94,8 +95,8 @@ static bool topbar = true;
 static int bw = -1, bh = -1, bx = 0, by = 0;
 static int bu = 1; // Underline height
 static rgba_t fgc, bgc, ugc;
-static rgba_t dfgc, dbgc;
-static area_stack_t astack;
+static rgba_t dfgc, dbgc, dugc;
+static area_stack_t area_stack;
 static int slant;
 static int slant_width;
 static int full_slant_width;
@@ -184,13 +185,18 @@ xcb_void_cookie_t xcb_poly_text_16_simple(xcb_connection_t * c,
     xcb_parts[6].iov_len = -(xcb_parts[4].iov_len + xcb_parts[5].iov_len) & 3;
 
     xcb_ret.sequence = xcb_send_request(c, 0, xcb_parts + 2, &xcb_req);
+
     return xcb_ret;
 }
 
 int
 draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch, int slant)
 {
-    int ch_width = cur_font->width_lut[ch - cur_font->char_min].character_width;
+    int ch_width;
+
+    ch_width = (cur_font->width_lut) ?
+        cur_font->width_lut[ch - cur_font->char_min].character_width:
+        cur_font->width;
 
     switch (align) {
         case ALIGN_C:
@@ -277,9 +283,7 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch, int 
 rgba_t
 parse_color (const char *str, char **end, const rgba_t def)
 {
-    xcb_alloc_named_color_reply_t *nc_reply;
     int string_len;
-    rgba_t ret;
     char *ep;
 
     if (!str)
@@ -294,60 +298,60 @@ parse_color (const char *str, char **end, const rgba_t def)
     }
 
     // Hex representation
-    if (str[0] == '#') {
-        errno = 0;
-        rgba_t tmp = (rgba_t)(uint32_t)strtoul(str + 1, &ep, 16);
-
+    if (str[0] != '#') {
         if (end)
-            *end = ep;
+            *end = (char *)str;
 
-        // Some error checking is definitely good
-        if (errno) {
-            fprintf(stderr, "Invalid color specified\n");
-            return def;
-        }
-
-        string_len = ep - (str + 1);
-
-        // If the code is in #rrggbb form then assume it's opaque
-        if (string_len <= 6)
-            tmp.a = 255;
-
-        // Premultiply the alpha in
-        if (tmp.a) {
-            // The components are clamped automagically as the rgba_t is made of uint8_t
-            return (rgba_t){
-                .r = (tmp.r * tmp.a) / 255,
-                .g = (tmp.g * tmp.a) / 255,
-                .b = (tmp.b * tmp.a) / 255,
-                .a = tmp.a,
-            };
-        }
-
-        return (rgba_t)0U;
+        fprintf(stderr, "Invalid color specified\n");
+        return def;
     }
 
-    // Actual color name, resolve it
-    for (string_len = 0; isalpha(str[string_len]); string_len++)
-        ;
-
-    nc_reply = xcb_alloc_named_color_reply(c, xcb_alloc_named_color(c, colormap, string_len, str), NULL);
-
-    if (!nc_reply)
-        fprintf(stderr, "Could not allocate the color \"%.*s\"\n", string_len, str);
-
-    ret = nc_reply?
-        (rgba_t)nc_reply->pixel:
-        def;
-
-    free(nc_reply);
+    errno = 0;
+    rgba_t tmp = (rgba_t)(uint32_t)strtoul(str + 1, &ep, 16);
 
     if (end)
-        *end = (char *)str + string_len;
+        *end = ep;
 
-    return ret;
+    // Some error checking is definitely good
+    if (errno) {
+        fprintf(stderr, "Invalid color specified\n");
+        return def;
+    }
+
+    string_len = ep - (str + 1);
+
+    switch (string_len) {
+        case 3:
+            // Expand the #rgb format into #rrggbb (aa is set to 0xff)
+            tmp.v = (tmp.v & 0xf00) * 0x1100
+                  | (tmp.v & 0x0f0) * 0x0110
+                  | (tmp.v & 0x00f) * 0x0011;
+        case 6:
+            // If the code is in #rrggbb form then assume it's opaque
+            tmp.a = 255;
+            break;
+        case 7:
+        case 8:
+            // Colors in #aarrggbb format, those need no adjustments
+            break;
+        default:
+            fprintf(stderr, "Invalid color specified\n");
+            return def;
+    }
+
+    // Premultiply the alpha in
+    if (tmp.a) {
+        // The components are clamped automagically as the rgba_t is made of uint8_t
+        return (rgba_t){
+            .r = (tmp.r * tmp.a) / 255,
+            .g = (tmp.g * tmp.a) / 255,
+            .b = (tmp.b * tmp.a) / 255,
+            .a = tmp.a,
+        };
+    }
+
+    return (rgba_t)0U;
 }
-
 
 void
 set_attribute (const char modifier, const char attribute)
@@ -371,10 +375,9 @@ area_t *
 area_get (xcb_window_t win, const int btn, const int x)
 {
     // Looping backwards ensures that we get the innermost area first
-    for (int i = astack.pos; i >= 0; i--) {
-        area_t *a = &astack.slot[i];
-        if (a->window == win && a->button == btn
-                && x >= a->begin && x < a->end)
+    for (int i = area_stack.at - 1; i >= 0; i--) {
+        area_t *a = &area_stack.area[i];
+        if (a->window == win && a->button == btn && x >= a->begin && x < a->end)
             return a;
     }
     return NULL;
@@ -388,8 +391,8 @@ area_shift (xcb_window_t win, const int align, int delta)
     if (align == ALIGN_C)
         delta /= 2;
 
-    for (int i = 0; i < astack.pos; i++) {
-        area_t *a = &astack.slot[i];
+    for (int i = 0; i < area_stack.at; i++) {
+        area_t *a = &area_stack.area[i];
         if (a->window == win && a->align == align && !a->active) {
             a->begin -= delta;
             a->end -= delta;
@@ -409,13 +412,15 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
         *end = str;
 
         // Find most recent unclosed area.
-        for (i = astack.pos - 1; i >= 0 && !astack.slot[i].active; i--)
+        for (i = area_stack.at - 1; i >= 0 && !area_stack.area[i].active; i--)
             ;
-        a = &astack.slot[i];
+        a = &area_stack.area[i];
 
         // Basic safety checks
-        if (!a->cmd || a->align != align || a->window != mon->window)
+        if (!a->cmd || a->align != align || a->window != mon->window) {
+            fprintf(stderr, "Invalid geometry for the clickable area\n");
             return false;
+        }
 
         const int size = x - a->begin;
 
@@ -438,11 +443,12 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
         return true;
     }
 
-    if (astack.pos >= N) {
-        fprintf(stderr, "astack overflow!\n");
+    if (area_stack.at + 1 > area_stack.max) {
+        fprintf(stderr, "Cannot add any more clickable areas (used %d/%d)\n",
+                area_stack.at, area_stack.max);
         return false;
     }
-    a = &astack.slot[astack.pos++];
+    a = &area_stack.area[area_stack.at++];
 
     // Found the closing : and check if it's just an escaped one
     for (trail = strchr(++str, ':'); trail && trail[-1] == '\\'; trail = strchr(trail + 1, ':'))
@@ -481,10 +487,13 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
 bool
 font_has_glyph (font_t *font, const uint16_t c)
 {
-    return (c >= font->char_min &&
-            c <= font->char_max &&
-            font->width_lut &&
-            font->width_lut[c - font->char_min].character_width);
+    if (c < font->char_min || c > font->char_max)
+        return false;
+
+    if (font->width_lut && font->width_lut[c - font->char_min].character_width == 0)
+        return false;
+
+    return true;
 }
 
 // returns NULL if character cannot be printed
@@ -517,7 +526,8 @@ parse (char *text)
     align = ALIGN_L;
     cur_mon = monhead;
 
-    memset(&astack, 0, sizeof(area_stack_t));
+    // Reset the stack position
+    area_stack.at = 0;
 
     for (monitor_t *m = monhead; m != NULL; m = m->next)
         fill_rect(m->pixmap, gc[GC_CLEAR], 0, 0, m->width, bh);
@@ -526,7 +536,8 @@ parse (char *text)
         if (*p == '\0' || *p == '\n')
             return;
 
-        if (*p == '%' && p++ && *p == '{' && (block_end = strchr(p++, '}'))) {
+        if (p[0] == '%' && p[1] == '{' && (block_end = strchr(p++, '}'))) {
+            p++;
             while (p < block_end) {
                 while (isspace(*p))
                     p++;
@@ -552,12 +563,13 @@ parse (char *text)
                               // The range is 1-5
                               if (isdigit(*p) && (*p > '0' && *p < '6'))
                                   button = *p++ - '0';
-                              area_add(p, block_end, &p, cur_mon, pos_x, align, button);
+                              if (!area_add(p, block_end, &p, cur_mon, pos_x, align, button))
+                                  return;
                               break;
 
                     case 'B': bgc = parse_color(p, &p, dbgc); update_gc(); break;
                     case 'F': fgc = parse_color(p, &p, dfgc); update_gc(); break;
-                    case 'U': ugc = parse_color(p, &p, dbgc); update_gc(); break;
+                    case 'U': ugc = parse_color(p, &p, dugc); update_gc(); break;
 
 
                     case 'E':
@@ -592,13 +604,22 @@ parse (char *text)
                               break;
 
                     case 'T':
-                              font_index = (int)strtoul(p, &ep, 10);
-                              // User-specified 'font_index' ∊ (0,font_count]
-                              // Otherwise just fallback to the automatic font selection
-                              if (!font_index || font_index > font_count)
+                              if (*p == '-') { //Reset to automatic font selection
                                   font_index = -1;
-                              p = ep;
-                              break;
+                                  p++;
+                                  break;
+                              } else if (isdigit(*p)) {
+                                  font_index = (int)strtoul(p, &ep, 10);
+                                  // User-specified 'font_index' ∊ (0,font_count]
+                                  // Otherwise just fallback to the automatic font selection
+                                  if (!font_index || font_index > font_count)
+                                  font_index = -1;
+                                  p = ep;
+                                  break;
+                              } else {
+                                  fprintf(stderr, "Invalid font slot \"%c\"\n", *p++); //Swallow the token
+                                  break;
+                              }
 
                     // In case of error keep parsing after the closing }
                     default:
@@ -636,7 +657,7 @@ parse (char *text)
                 ucs = 0xfffd;
                 p += 5;
             }
-            // Siz byte utf8 sequence
+            // Six byte utf8 sequence
             else if ((utf[0] & 0xfe) == 0xfc) {
                 ucs = 0xfffd;
                 p += 6;
@@ -661,9 +682,14 @@ parse (char *text)
     }
 }
 
-font_t *
-font_load (const char *str)
+void
+font_load (const char *pattern)
 {
+    if (font_count >= MAX_FONT_COUNT) {
+        fprintf(stderr, "Max font count reached. Could not load font \"%s\"\n", pattern);
+        return;
+    }
+
     xcb_query_font_cookie_t queryreq;
     xcb_query_font_reply_t *font_info;
     xcb_void_cookie_t cookie;
@@ -671,16 +697,16 @@ font_load (const char *str)
 
     font = xcb_generate_id(c);
 
-    cookie = xcb_open_font_checked(c, font, strlen(str), str);
+    cookie = xcb_open_font_checked(c, font, strlen(pattern), pattern);
     if (xcb_request_check (c, cookie)) {
-        fprintf(stderr, "Could not load font \"%s\"\n", str);
-        return NULL;
+        fprintf(stderr, "Could not load font \"%s\"\n", pattern);
+        return;
     }
 
     font_t *ret = calloc(1, sizeof(font_t));
 
     if (!ret)
-        return NULL;
+        return;
 
     queryreq = xcb_query_font(c, font);
     font_info = xcb_query_font_reply(c, queryreq, NULL);
@@ -688,6 +714,7 @@ font_load (const char *str)
     ret->ptr = font;
     ret->descent = font_info->font_descent;
     ret->height = font_info->font_ascent + font_info->font_descent;
+    ret->width = font_info->max_bounds.character_width;
     ret->char_max = font_info->max_byte1 << 8 | font_info->max_char_or_byte2;
     ret->char_min = font_info->min_byte1 << 8 | font_info->min_char_or_byte2;
 
@@ -700,7 +727,7 @@ font_load (const char *str)
 
     free(font_info);
 
-    return ret;
+    font_list[font_count++] = ret;
 }
 
 enum {
@@ -820,10 +847,15 @@ rect_sort_cb (const void *p1, const void *p2)
     const xcb_rectangle_t *r1 = (xcb_rectangle_t *)p1;
     const xcb_rectangle_t *r2 = (xcb_rectangle_t *)p2;
 
-    if (r1->x < r2->x || r1->y < r2->y)
+    if (r1->x < r2->x || r1->y + r1->height <= r2->y)
+    {
         return -1;
-    if (r1->x > r2->x || r1->y > r2->y)
-        return  1;
+    }
+
+    if (r1->x > r2->x || r1->y + r1->height > r2->y)
+    {
+        return 1;
+    }
 
     return 0;
 }
@@ -1087,48 +1119,6 @@ parse_geometry_string (char *str, int *tmp)
 }
 
 void
-parse_font_list (char *str)
-{
-    char *tok, *end;
-
-    if (!str)
-        return;
-
-    tok = strtok(str, ",");
-
-    while (tok) {
-        if (font_count > MAX_FONT_COUNT - 1) {
-            fprintf(stderr, "Too many fonts; maximum %i\n", MAX_FONT_COUNT);
-            return;
-        }
-
-        // Strip the leading and trailing whitespaces
-        while (isspace(*tok) || iscntrl(*tok))
-            tok++;
-
-        end = tok + strlen(tok) - 1;
-
-        while ((end > tok && isspace(*end)) || iscntrl(*end))
-            end--;
-
-        *(end + 1) = '\0';
-
-        if (tok[0]) {
-            // Load the selected font
-            font_t *font = font_load(tok);
-            if (font)
-                font_list[font_count++] = font;
-        }
-        else
-            fprintf(stderr, "Empty font name, skipping...\n");
-
-        tok = strtok(NULL, ",");
-    }
-}
-
-
-
-void
 xconn (void)
 {
     // Connect to X
@@ -1149,15 +1139,11 @@ xconn (void)
 }
 
 void
-init (void)
+init (char *wm_name)
 {
-    // This has to be declared as an array because otherwise the compiler would turn it into a const
-    // string, making strtok choke very hard on this
-    char fallback_font[] = "fixed";
-
     // Try to load a default font
     if (!font_count)
-        parse_font_list(fallback_font);
+        font_load("fixed");
 
     // We tried and failed hard, there's something wrong
     if (!font_count)
@@ -1241,6 +1227,10 @@ init (void)
         // Make sure that the window really gets in the place it's supposed to be
         // Some WM such as Openbox need this
         xcb_configure_window(c, mon->window, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, (const uint32_t []){ mon->x, mon->y });
+
+        // Set the WM_NAME atom to the user specified value
+        if (wm_name)
+            xcb_change_property(c, XCB_PROP_MODE_REPLACE, monhead->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8 ,strlen(wm_name), wm_name);
     }
 
     xcb_flush(c);
@@ -1249,6 +1239,8 @@ init (void)
 void
 cleanup (void)
 {
+    free(area_stack.area);
+
     for (int i = 0; i < font_count; i++) {
         xcb_close_font(c, font_list[i]->ptr);
         free(font_list[i]->width_lut);
@@ -1295,47 +1287,71 @@ main (int argc, char **argv)
     char input[4096] = {0, };
     bool permanent = false;
     int geom_v[4] = { -1, -1, 0, 0 };
-    int ch;
+    int ch, areas;
+    char *wm_name;
 
     // Install the parachute!
     atexit(cleanup);
     signal(SIGINT, sighandle);
     signal(SIGTERM, sighandle);
 
+    // B/W combo
+    dbgc = bgc = (rgba_t)0x00000000U;
+    dfgc = fgc = (rgba_t)0xffffffffU;
+    dugc = ugc = fgc;
+
+    // A safe default
+    areas = 10;
+    wm_name = NULL;
+
     // Connect to the Xserver and initialize scr
     xconn();
 
-    // B/W combo
-    dbgc = bgc = parse_color("black", NULL, (rgba_t)scr->black_pixel);
-    dfgc = fgc = parse_color("white", NULL, (rgba_t)scr->white_pixel);
-
-    ugc = fgc;
-
-    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:")) != -1) {
+    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:U:n:")) != -1) {
         switch (ch) {
             case 'h':
                 printf ("lemonbar version %s\n", VERSION);
-                printf ("usage: %s [-h | -g | -b | -d | -f | -a | -p | -u | -B | -F]\n"
+                printf ("usage: %s [-h | -g | -b | -d | -f | -a | -p | -n | -u | -B | -F]\n"
                         "\t-h Show this help\n"
                         "\t-g Set the bar geometry {width}x{height}+{xoffset}+{yoffset}\n"
                         "\t-b Put the bar at the bottom of the screen\n"
                         "\t-d Force docking (use this if your WM isn't EWMH compliant)\n"
-                        "\t-f Bar font list, comma separated\n"
+                        "\t-f Set the font name to use\n"
+                        "\t-a Number of clickable areas available (default is 10)\n"
                         "\t-p Don't close after the data ends\n"
+                        "\t-n Set the WM_NAME atom to the specified value for this bar\n"
                         "\t-u Set the underline/overline height in pixels\n"
                         "\t-B Set background color in #AARRGGBB\n"
                         "\t-F Set foreground color in #AARRGGBB\n", argv[0]);
                 exit (EXIT_SUCCESS);
             case 'g': (void)parse_geometry_string(optarg, geom_v); break;
             case 'p': permanent = true; break;
+            case 'n': wm_name = optarg; break;
             case 'b': topbar = false; break;
             case 'd': dock = true; break;
-            case 'f': parse_font_list(optarg); break;
+            case 'f': font_load(optarg); break;
             case 'u': bu = strtoul(optarg, NULL, 10); break;
-            case 'B': dbgc = bgc = parse_color(optarg, NULL, (rgba_t)scr->black_pixel); break;
-            case 'F': dfgc = fgc = parse_color(optarg, NULL, (rgba_t)scr->white_pixel); break;
+            case 'B': dbgc = bgc = parse_color(optarg, NULL, (rgba_t)0x00000000U); break;
+            case 'F': dfgc = fgc = parse_color(optarg, NULL, (rgba_t)0xffffffffU); break;
+            case 'U': dugc = ugc = parse_color(optarg, NULL, fgc); break;
+            case 'a': areas = strtoul(optarg, NULL, 10); break;
         }
     }
+
+    // Initialize the stack holding the clickable areas
+    area_stack.at = 0;
+    area_stack.max = areas;
+    if (areas) {
+        area_stack.area = calloc(areas, sizeof(area_t));
+
+        if (!area_stack.area) {
+            fprintf(stderr, "Could not allocate enough memory for %d clickable areas, try lowering the number\n", areas);
+            return EXIT_FAILURE;
+        }
+    }
+    else
+        area_stack.area = NULL;
+
 
     // Copy the geometry values in place
     bw = geom_v[0];
@@ -1344,7 +1360,7 @@ main (int argc, char **argv)
     by = geom_v[3];
 
     // Do the heavy lifting
-    init();
+    init(wm_name);
     // Get the fd to Xserver
     pollin[1].fd = xcb_get_file_descriptor(c);
 

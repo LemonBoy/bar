@@ -6,7 +6,7 @@ lemonbar - Featherweight lemon-scented bar
 
 =head1 SYNOPSIS
 
-I<lemonbar> [-h | -g I<width>B<x>I<height>B<+>I<x>B<+>I<y> | -b | -d | -f I<font> | -p | -u I<pixel> | -B I<color> | -F I<color>]
+I<lemonbar> [-h | -g I<width>B<x>I<height>B<+>I<x>B<+>I<y> | -b | -d | -f I<font> | -p | -n I<name> | -u I<pixel> | -B I<color> | -F I<color> | -U I<color>]
 
 =head1 DESCRIPTION
 
@@ -34,11 +34,20 @@ Force docking without asking the window manager. This is needed if the window ma
 
 =item B<-f> I<font>
 
-Comma separated list of fonts, lemonbar supports a maximum of five fonts (the limit can be tweaked by changing the MAX_FONT_COUNT parameter in the source).
+Define the font to load into one of the five slots (the number of slots is hardcoded and can be tweaked by
+changing the MAX_FONT_COUNT parameter in the source code).
+
+=item B<-a> I<number>
+
+Set number of clickable areas (default is 10)
 
 =item B<-p>
 
 Make the bar permanent, don't exit after the standard input is closed.
+
+=item B<-n> I<name>
+
+Set the WM_NAME atom value for the bar.
 
 =item B<-u> I<pixel>
 
@@ -46,17 +55,21 @@ Sets the underline width in pixels. The default is 1.
 
 =item B<-B> I<color>
 
-Set the background color of the bar. I<color> might be either in hex format (#aarrggbb) or in the symbolic name format (eg. white, indianred, darkgray). If no compositor such as compton or xcompmgr is running the alpha channel is silently ignored.
+Set the background color of the bar. I<color> must be specified in the hex format (#aarrggbb, #rrggbb, #rgb). If no compositor such as compton or xcompmgr is running the alpha channel is silently ignored.
 
 =item B<-F> I<color>
 
 Set the foreground color of the bar. Accepts the same color formats as B<-B>.
 
+=item B<-U> I<color>
+
+Set the underline color of the bar. Accepts the same color formats as B<-B>.
+
 =back
 
 =head1 FORMATTING
 
-lemonbar provides a screenrc-inspired formatting syntax to allow full customization at runtime. Every formatting block is opened with B<%{> and closed by B<}> and accepts the following commands, the parser tries it's best to handle malformed input.
+lemonbar provides a screenrc-inspired formatting syntax to allow full customization at runtime. Every formatting block is opened with C<%{> and closed by C<}> and accepts the following commands, the parser tries it's best to handle malformed input. Use C<%%> to get a literal percent sign (C<%>).
 
 =over
 
@@ -86,7 +99,7 @@ Set the text foreground color. The parameter I<color> can be I<-> or a color in 
 
 =item B<T>I<index>
 
-Set the font used to draw the following text. The parameter I<index> is a 1-based index of the font list supplied to bar. Any other value (for example I<->) resets the bar to normal behaviour (matching the first font that can be used for that character). If the selected font can't be used to draw a character, lemonbar will fall back to normal behaviour for that character.
+Set the font used to draw the following text. The parameter I<index> can either be I<-> or the 1-based index of the slot which contains the desired font. If the parameter is I<-> lemonbar resets to the normal behavior (matching the first font that can be used for the character). If the selected font can't be used to draw a character, lemonbar will fall back to normal behavior for that character
 
 =item B<U>I<color>
 
@@ -94,7 +107,7 @@ Set the text underline color. The parameter I<color> can be I<-> or a color in o
 
 =item B<A>I<button>:I<command>:
 
-Create a clickable area starting from the current position, when the area is clicked I<command> is executed. The area is closed when a B<A> token, not followed by : is encountered.
+Create a clickable area starting from the current position, when the area is clicked I<command> is printed on stdout. The area is closed when a B<A> token, not followed by : is encountered.
 
 Eg. I<%{A:reboot:} Click here to reboot %{A}>
 
