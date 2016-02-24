@@ -17,6 +17,4 @@ ${sbg}%{E${Len}}$(space)${bg} - \
 ${sbg}%{e${Len}}$(space)${bg} - \
 ${sbg}%{D${Len}}$(space)${bg} - \
 ${sbg}%{d${Len}}$(space)${bg} " \
-| ./lemonbar -g $geom -p
-
-
+| ./lemonbar -g $geom -p -B "#000000"
