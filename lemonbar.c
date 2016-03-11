@@ -97,11 +97,16 @@ static int bu = 1; // Underline height
 static rgba_t fgc, bgc, ugc;
 static rgba_t dfgc, dbgc, dugc;
 static area_stack_t area_stack;
+
+// slant vars
 static int slant;
+static int right;
 static int slant_width;
 static int full_slant_width;
 static int slant_counter;
 static int upslant;
+static int fg_height;
+static int bg_height;
 
 void
 update_gc (void)
@@ -220,10 +225,6 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch, int 
     // Draw the background first
     if(slant_width)
     {
-        // even = slant left, odd = slant right
-        int right = slant % 2;
-        int cur_height = 0;
-
         if(!full_slant_width)
             full_slant_width = slant_width * ch_width;
 
@@ -231,15 +232,25 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch, int 
         {
             slant_counter++;
             if (right)
-                cur_height = (bh * (full_slant_width - slant_counter)) / full_slant_width;
+            {
+                fg_height = (bh * (full_slant_width - slant_counter)) / full_slant_width;
+                bg_height = (slant_counter * bh) / full_slant_width;
+            }
             else
-                cur_height = (slant_counter * bh) / full_slant_width;
+            {
+                fg_height = (slant_counter * bh) / full_slant_width;
+                bg_height = (bh * (full_slant_width - slant_counter)) / full_slant_width;
+            }
 
-            if (!upslant)
-                cur_height *= -1;
+            if (upslant)
+                bg_height *= -1;
+            else
+                fg_height *= -1;
 
-            fill_rect(mon->pixmap, gc[GC_CLEAR], x+i, cur_height, 1, bh);
+            fill_rect(mon->pixmap, gc[GC_DRAW], x+i, fg_height, 1, bh);
+            fill_rect(mon->pixmap, gc[GC_CLEAR], x+i, bg_height, 1, bh);
         }
+        slant_width--;
     }
     else
     {
@@ -561,7 +572,10 @@ parse (char *text)
                     case 'd':
                               slant = *(p-1) - 'A'; // 4,36,5,37
                               slant_width = (*p++) - '0';
+                              right = slant % 2;
                               full_slant_width = 0;
+                              fg_height = 0;
+                              bg_height = 0;
                               slant_counter = 0;
                               upslant = slant > 20 ? 1 : 0;
                               break;
