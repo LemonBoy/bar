@@ -114,6 +114,7 @@ void
 update_gc (void)
 {
     xcb_change_gc(c, gc[GC_DRAW], XCB_GC_FOREGROUND, (const uint32_t []){ fgc.v });
+    xcb_change_gc(c, gc[GC_DRAW], XCB_GC_BACKGROUND, (const uint32_t []){ bgc.v });
     xcb_change_gc(c, gc[GC_CLEAR], XCB_GC_FOREGROUND, (const uint32_t []){ bgc.v });
     xcb_change_gc(c, gc[GC_ATTR], XCB_GC_FOREGROUND, (const uint32_t []){ ugc.v });
 }
@@ -368,7 +369,7 @@ draw_icon (monitor_t *mon, int x, int align, char *filename)
 
     fill_rect(mon->pixmap, gc[GC_CLEAR], x, by, icon->width, bh);
     xcb_image_put(c, mon->pixmap, gc[GC_DRAW], icon->image, x, (bh-icon->height) / 2, 0);
-    return 0;
+    return icon_width;
 }
 
 rgba_t
@@ -654,6 +655,7 @@ parse (char *text)
                                   break;
                               char filename[256];
                               strncpy(filename, p, block_end-p);
+                              filename[block_end-p] = '\0';
                               int icon_width = draw_icon(cur_mon, pos_x, align, filename);
                               pos_x += icon_width;
                               area_shift(cur_mon->window, align, icon_width);
@@ -1302,7 +1304,7 @@ init (char *wm_name)
 
     // Create the gc for drawing
     gc[GC_DRAW] = xcb_generate_id(c);
-    xcb_create_gc(c, gc[GC_DRAW], monhead->pixmap, XCB_GC_FOREGROUND, (const uint32_t []){ fgc.v });
+    xcb_create_gc(c, gc[GC_DRAW], monhead->pixmap, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND, (const uint32_t []){ fgc.v, bgc.v });
 
     gc[GC_CLEAR] = xcb_generate_id(c);
     xcb_create_gc(c, gc[GC_CLEAR], monhead->pixmap, XCB_GC_FOREGROUND, (const uint32_t []){ bgc.v });
