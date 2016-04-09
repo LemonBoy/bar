@@ -105,6 +105,10 @@ Set the font used to draw the following text. The parameter I<index> can either 
 
 Set the text underline color. The parameter I<color> can be I<-> or a color in one of the formats mentioned before. The special value I<-> resets the color to the default one.
 
+=item B<I>I<filename>
+
+Draw the icon specified by I<filename>. The icon must be in xbm format.
+
 =item B<A>I<button>:I<command>:
 
 Create a clickable area starting from the current position, when the area is clicked I<command> is printed on stdout. The area is closed when a B<A> token, not followed by : is encountered.
