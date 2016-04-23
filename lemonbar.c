@@ -85,6 +85,7 @@ static xcb_screen_t *scr;
 static xcb_gcontext_t gc[GC_MAX];
 static xcb_visualid_t visual;
 static xcb_colormap_t colormap;
+static const xcb_query_extension_reply_t *randr;
 static monitor_t *monhead, *montail;
 static font_t *font_list[MAX_FONT_COUNT];
 static int font_count = 0;
@@ -92,6 +93,7 @@ static int font_index = -1;
 static uint32_t attrs = 0;
 static bool dock = false;
 static bool topbar = true;
+static char *wm_name;
 static int bw = -1, bh = -1, bx = 0, by = 0;
 static int bu = 1; // Underline height
 static rgba_t fgc, bgc, ugc;
@@ -761,7 +763,7 @@ set_ewmh_atoms (void)
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_DESKTOP], XCB_ATOM_CARDINAL, 32, 1, (const uint32_t []){ -1 } );
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_STRUT_PARTIAL], XCB_ATOM_CARDINAL, 32, 12, strut);
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_STRUT], XCB_ATOM_CARDINAL, 32, 4, strut);
-        xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8, 3, "bar");
+        xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8, 3, wm_name);
     }
 }
 
@@ -831,23 +833,8 @@ rect_sort_cb (const void *p1, const void *p2)
 }
 
 void
-monitor_create_chain (xcb_rectangle_t *rects, const int num)
+bar_calculate_size (int width, int height)
 {
-    int i;
-    int width = 0, height = 0;
-    int left = bx;
-
-    // Sort before use
-    qsort(rects, num, sizeof(xcb_rectangle_t), rect_sort_cb);
-
-    for (i = 0; i < num; i++) {
-        int h = rects[i].y + rects[i].height;
-        // Accumulated width of all monitors
-        width += rects[i].width;
-        // Get height of screen from y_offset + height of lowest monitor
-        if (h >= height)
-        height = h;
-    }
 
     if (bw < 0)
         bw = width - bx;
@@ -861,6 +848,35 @@ monitor_create_chain (xcb_rectangle_t *rects, const int num)
         fprintf(stderr, "The geometry specified doesn't fit the screen!\n");
         exit(EXIT_FAILURE);
     }
+}
+
+void
+calculate_screen_size(xcb_rectangle_t *rects, const int num, int* width, int* height)
+{
+    int i;
+    // Sort before use
+    qsort(rects, num, sizeof(xcb_rectangle_t), rect_sort_cb);
+
+    for (i = 0; i < num; i++) {
+        int h = rects[i].y + rects[i].height;
+        // Accumulated width of all monitors
+        *width += rects[i].width;
+        // Get height of screen from y_offset + height of lowest monitor
+        if (h >= *height)
+        *height = h;
+    }
+}
+
+void
+monitor_create_chain (xcb_rectangle_t *rects, const int num)
+{
+    int i;
+    int width = 0, height = 0;
+    int left = bx;
+
+    calculate_screen_size(rects, num, &width, &height);
+
+    bar_calculate_size(width, height);
 
     // Left is a positive number or zero therefore monitors with zero width are excluded
     width = bw;
@@ -890,6 +906,77 @@ monitor_create_chain (xcb_rectangle_t *rects, const int num)
 
         if (left < 0)
             left = 0;
+    }
+}
+
+void
+monitor_update_chain (xcb_rectangle_t *rects, const int num)
+{
+    int i;
+    int width = 0, height = 0;
+    int left = bx;
+
+    calculate_screen_size(rects, num, &width, &height);
+
+    bar_calculate_size(width, height);
+
+    // Left is a positive number or zero therefore monitors with zero width are excluded
+    width = bw;
+    monitor_t *this = monhead;
+    for (i = 0; i < num; i++) {
+        if (rects[i].y + rects[i].height < by)
+            continue;
+        if (rects[i].width > left) {
+            if (this == NULL) {
+                this = monitor_new(
+                        rects[i].x + left,
+                        rects[i].y,
+                        min(width, rects[i].width - left),
+                        rects[i].height);
+
+                if (!this)
+                    break;
+
+                monitor_add(this);
+            } else {
+                this->x = rects[i].x + left;
+                this->y = (topbar ? by : height - bh - by) + rects[i].y;
+                this->width = min(width, rects[i].width - left);
+
+                xcb_configure_window(c, this->window, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT | XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, (const uint32_t []){ this->x, this->y, this->width, bh });
+
+                xcb_free_pixmap(c, this->pixmap);
+                this->pixmap = xcb_generate_id(c);
+                int depth = (visual == scr->root_visual) ? XCB_COPY_FROM_PARENT : 32;
+                xcb_create_pixmap(c, depth, this->pixmap, this->window, this->width, bh);
+
+            }
+            this = this->next;
+
+            width -= rects[i].width - left;
+
+            // No need to check for other monitors
+            if (width <= 0)
+                break;
+        }
+
+        left -= rects[i].width;
+
+        if (left < 0)
+            left = 0;
+    }
+
+    //Do we have too many monitors (Some were disconnected)
+    if(this) {
+        montail = this->prev;
+        this->prev->next = NULL;
+        while(this) {
+            monitor_t *next = this->next;
+            xcb_destroy_window(c, this->window);
+            xcb_free_pixmap(c, this->window);
+            free(this);
+            this = next;
+        }
     }
 }
 
@@ -984,7 +1071,10 @@ get_randr_monitors (void)
         if (rects[i].width != 0)
             r[j++] = rects[i];
 
-    monitor_create_chain(r, valid);
+    if (!monhead)
+        monitor_create_chain(r, valid);
+    else
+        monitor_update_chain(r, valid);
 }
 
 void
@@ -1106,10 +1196,26 @@ xconn (void)
 
     colormap = xcb_generate_id(c);
     xcb_create_colormap(c, XCB_COLORMAP_ALLOC_NONE, colormap, scr->root, visual);
+
+    randr = xcb_get_extension_data(c, &xcb_randr_id);
+    xcb_randr_select_input(c, scr->root, XCB_RANDR_NOTIFY_MASK_OUTPUT_CHANGE);
 }
 
 void
-init (char *wm_name)
+map_monitors (void)
+{
+    for (monitor_t *mon = monhead; mon; mon = mon->next) {
+        fill_rect(mon->pixmap, gc[GC_CLEAR], 0, 0, mon->width, bh);
+        xcb_map_window(c, mon->window);
+
+        // Make sure that the window really gets in the place it's supposed to be
+        // Some WM such as Openbox need this
+        xcb_configure_window(c, mon->window, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, (const uint32_t []){ mon->x, mon->y });
+    }
+}
+
+void
+init (void)
 {
     // Try to load a default font
     if (!font_count)
@@ -1189,19 +1295,7 @@ init (char *wm_name)
     gc[GC_ATTR] = xcb_generate_id(c);
     xcb_create_gc(c, gc[GC_ATTR], monhead->pixmap, XCB_GC_FOREGROUND, (const uint32_t []){ ugc.v });
 
-    // Make the bar visible and clear the pixmap
-    for (monitor_t *mon = monhead; mon; mon = mon->next) {
-        fill_rect(mon->pixmap, gc[GC_CLEAR], 0, 0, mon->width, bh);
-        xcb_map_window(c, mon->window);
-
-        // Make sure that the window really gets in the place it's supposed to be
-        // Some WM such as Openbox need this
-        xcb_configure_window(c, mon->window, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, (const uint32_t []){ mon->x, mon->y });
-
-        // Set the WM_NAME atom to the user specified value
-        if (wm_name)
-            xcb_change_property(c, XCB_PROP_MODE_REPLACE, monhead->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8 ,strlen(wm_name), wm_name);
-    }
+    map_monitors();
 
     xcb_flush(c);
 }
@@ -1258,7 +1352,6 @@ main (int argc, char **argv)
     bool permanent = false;
     int geom_v[4] = { -1, -1, 0, 0 };
     int ch, areas;
-    char *wm_name;
 
     // Install the parachute!
     atexit(cleanup);
@@ -1272,7 +1365,7 @@ main (int argc, char **argv)
 
     // A safe default
     areas = 10;
-    wm_name = NULL;
+    wm_name = "bar";
 
     // Connect to the Xserver and initialize scr
     xconn();
@@ -1330,7 +1423,7 @@ main (int argc, char **argv)
     by = geom_v[3];
 
     // Do the heavy lifting
-    init(wm_name);
+    init();
     // Get the fd to Xserver
     pollin[1].fd = xcb_get_file_descriptor(c);
 
@@ -1357,7 +1450,8 @@ main (int argc, char **argv)
                 while ((ev = xcb_poll_for_event(c))) {
                     expose_ev = (xcb_expose_event_t *)ev;
 
-                    switch (ev->response_type & 0x7F) {
+                    uint8_t type = ev->response_type & 0x7F;
+                    switch (type) {
                         case XCB_EXPOSE:
                             if (expose_ev->count == 0)
                                 redraw = true;
@@ -1373,6 +1467,25 @@ main (int argc, char **argv)
                                 }
                             }
                             break;
+                        default:
+                        {
+                            if(type == randr->first_event + XCB_RANDR_NOTIFY) {
+                                xcb_randr_notify_event_t *event = (void *)ev;
+                                switch(event->subCode) {
+                                    case XCB_RANDR_NOTIFY_OUTPUT_CHANGE:
+                                        bw = geom_v[0];
+                                        bh = geom_v[1];
+                                        bx = geom_v[2];
+                                        by = geom_v[3];
+                                        get_randr_monitors();
+                                        set_ewmh_atoms();
+                                        map_monitors();
+                                        parse(input);
+                                        redraw = true;
+                                        break;
+                                }
+                            }
+                        }
                     }
 
                     free(ev);
