@@ -186,14 +186,8 @@ xcb_void_cookie_t xcb_poly_text_16_simple(xcb_connection_t * c,
 }
 
 int
-draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
+shift (monitor_t *mon, int x, int align, int ch_width)
 {
-    int ch_width;
-
-    ch_width = (cur_font->width_lut) ?
-        cur_font->width_lut[ch - cur_font->char_min].character_width:
-        cur_font->width;
-
     switch (align) {
         case ALIGN_C:
             xcb_copy_area(c, mon->pixmap, mon->pixmap, gc[GC_DRAW],
@@ -213,6 +207,34 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
 
     // Draw the background first
     fill_rect(mon->pixmap, gc[GC_CLEAR], x, 0, ch_width, bh);
+    return x;
+}
+
+void
+draw_lines (monitor_t *mon, int x, int w)
+{
+    /* We can render both at the same time */
+    if (attrs & ATTR_OVERL)
+        fill_rect(mon->pixmap, gc[GC_ATTR], x, 0, w, bu);
+    if (attrs & ATTR_UNDERL)
+        fill_rect(mon->pixmap, gc[GC_ATTR], x, bh - bu, w, bu);
+}
+
+void
+draw_shift (monitor_t *mon, int x, int align, int w)
+{
+    x = shift(mon, x, align, w);
+    draw_lines(mon, x, w);
+}
+
+int
+draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
+{
+    int ch_width = (cur_font->width_lut) ?
+        cur_font->width_lut[ch - cur_font->char_min].character_width:
+        cur_font->width;
+
+    x = shift(mon, x, align, ch_width);
 
     // xcb accepts string in UCS-2 BE, so swap
     ch = (ch >> 8) | (ch << 8);
@@ -222,11 +244,7 @@ draw_char (monitor_t *mon, font_t *cur_font, int x, int align, uint16_t ch)
                             x, bh / 2 + cur_font->height / 2 - cur_font->descent,
                             1, &ch);
 
-    // We can render both at the same time
-    if (attrs & ATTR_OVERL)
-        fill_rect(mon->pixmap, gc[GC_ATTR], x, 0, ch_width, bu);
-    if (attrs & ATTR_UNDERL)
-        fill_rect(mon->pixmap, gc[GC_ATTR], x, bh - bu, ch_width, bu);
+    draw_lines(mon, x, ch_width);
 
     return ch_width;
 }
@@ -490,6 +508,7 @@ parse (char *text)
         if (p[0] == '%' && p[1] == '{' && (block_end = strchr(p++, '}'))) {
             p++;
             while (p < block_end) {
+                int w;
                 while (isspace(*p))
                     p++;
 
@@ -541,6 +560,17 @@ parse (char *text)
 
                               p++;
                               pos_x = 0;
+                              break;
+                    case 'O':
+                              errno = 0;
+                              w = (int) strtoul(p, &p, 10);
+                              if (errno)
+                                  continue;
+
+                              draw_shift(cur_mon, pos_x, align, w);
+
+                              pos_x += w;
+                              area_shift(cur_mon->window, align, w);
                               break;
 
                     case 'T':

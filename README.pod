@@ -89,6 +89,10 @@ Aligns the following text to the center of the screen.
 
 Aligns the following text to the right side of the screen.
 
+=item B<O>I<width>
+
+Offset the current position by I<width> pixels in the alignment direction.
+
 =item B<B>I<color>
 
 Set the text background color. The parameter I<color> can be I<-> or a color in one of the formats mentioned before. The special value I<-> resets the color to the default one.
