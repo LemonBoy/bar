@@ -11,7 +11,9 @@
 #include <errno.h>
 #include <xcb/xcb.h>
 #include <xcb/xcbext.h>
+#if WITH_XINERAMA
 #include <xcb/xinerama.h>
+#endif
 #include <xcb/randr.h>
 
 // Here be dragons
@@ -987,6 +989,7 @@ get_randr_monitors (void)
     monitor_create_chain(r, valid);
 }
 
+#ifdef WITH_XINERAMA
 void
 get_xinerama_monitors (void)
 {
@@ -1015,6 +1018,7 @@ get_xinerama_monitors (void)
 
     monitor_create_chain(rects, screens);
 }
+#endif
 
 xcb_visualid_t
 get_visual (void)
@@ -1139,7 +1143,9 @@ init (char *wm_name)
 
     if (qe_reply && qe_reply->present) {
         get_randr_monitors();
-    } else {
+    }
+#if WITH_XINERAMA
+    else {
         qe_reply = xcb_get_extension_data(c, &xcb_xinerama_id);
 
         // Check if Xinerama extension is present and active
@@ -1153,6 +1159,7 @@ init (char *wm_name)
             free(xia_reply);
         }
     }
+#endif
 
     if (!monhead) {
         // If I fits I sits
