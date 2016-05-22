@@ -1208,7 +1208,7 @@ init (char *wm_name)
 
         // Set the WM_NAME atom to the user specified value
         if (wm_name)
-            xcb_change_property(c, XCB_PROP_MODE_REPLACE, monhead->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8 ,strlen(wm_name), wm_name);
+            xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8 ,strlen(wm_name), wm_name);
     }
 
     xcb_flush(c);
