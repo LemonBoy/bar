@@ -1,4 +1,5 @@
 // vim:sw=4:ts=4:et:
+#define _POSIX_C_SOURCE 200809L
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1303,7 +1304,7 @@ main (int argc, char **argv)
                 exit (EXIT_SUCCESS);
             case 'g': (void)parse_geometry_string(optarg, geom_v); break;
             case 'p': permanent = true; break;
-            case 'n': wm_name = optarg; break;
+            case 'n': wm_name = strdup(optarg); break;
             case 'b': topbar = false; break;
             case 'd': dock = true; break;
             case 'f': font_load(optarg); break;
@@ -1338,6 +1339,8 @@ main (int argc, char **argv)
 
     // Do the heavy lifting
     init(wm_name);
+    // The string is strdup'd when the command line arguments are parsed
+    free(wm_name);
     // Get the fd to Xserver
     pollin[1].fd = xcb_get_file_descriptor(c);
 
