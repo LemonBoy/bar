@@ -7,6 +7,7 @@
 #include <ctype.h>
 #include <signal.h>
 #include <poll.h>
+#include <fcntl.h>
 #include <getopt.h>
 #include <unistd.h>
 #include <errno.h>
@@ -1344,6 +1345,9 @@ main (int argc, char **argv)
     // Get the fd to Xserver
     pollin[1].fd = xcb_get_file_descriptor(c);
 
+    // Prevent fgets to block
+    fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK);
+
     for (;;) {
         bool redraw = false;
 
@@ -1357,9 +1361,9 @@ main (int argc, char **argv)
                 else break;                         // ...bail out
             }
             if (pollin[0].revents & POLLIN) { // New input, process it
-                if (fgets(input, sizeof(input), stdin) == NULL)
-                    break; // EOF received
-
+                input[0] = '\0';
+                while (fgets(input, sizeof(input), stdin) != NULL)
+                    ; // Drain the buffer, the last line is actually used
                 parse(input);
                 redraw = true;
             }
