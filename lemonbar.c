@@ -765,7 +765,7 @@ set_ewmh_atoms (void)
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_STRUT_PARTIAL], XCB_ATOM_CARDINAL, 32, 12, strut);
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_STRUT], XCB_ATOM_CARDINAL, 32, 4, strut);
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8, 3, "bar");
-        xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, XCB_ATOM_WM_CLASS, XCB_ATOM_STRING, 8, 3, "bar");
+        xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, XCB_ATOM_WM_CLASS, XCB_ATOM_STRING, 8, 12, "lemonbar\0bar");
     }
 }
 
@@ -1115,7 +1115,7 @@ xconn (void)
 }
 
 void
-init (char *wm_name)
+init (char *wm_name, char *wm_instance)
 {
     // Try to load a default font
     if (!font_count)
@@ -1210,6 +1210,24 @@ init (char *wm_name)
         // Set the WM_NAME atom to the user specified value
         if (wm_name)
             xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8 ,strlen(wm_name), wm_name);
+
+        // set the WM_CLASS atom instance to the executable name
+        if (wm_instance) {
+            char *wm_class;
+            int wm_class_offset, wm_class_len;
+
+            // WM_CLASS is nullbyte seperated: wm_instance + "\0bar\0"
+            wm_class_offset = strlen(wm_instance) + 1;
+            wm_class_len = wm_class_offset + 4;
+
+            wm_class = calloc(1, wm_class_len + 1);
+            strcpy(wm_class, wm_instance);
+            strcpy(wm_class+wm_class_offset, "bar");
+
+            xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, XCB_ATOM_WM_CLASS, XCB_ATOM_STRING, 8, wm_class_len, wm_class);
+
+            free(wm_class);
+        }
     }
 
     xcb_flush(c);
@@ -1246,6 +1264,21 @@ cleanup (void)
         xcb_disconnect(c);
 }
 
+char*
+strip_path(char *path)
+{
+    char *slash;
+
+    if (path == NULL || *path == '\0')
+        return strdup("lemonbar");
+
+    slash = strrchr(path, '/');
+    if (slash != NULL)
+        return strndup(slash + 1, 31);
+
+    return strndup(path, 31);
+}
+
 void
 sighandle (int signal)
 {
@@ -1268,6 +1301,7 @@ main (int argc, char **argv)
     int geom_v[4] = { -1, -1, 0, 0 };
     int ch, areas;
     char *wm_name;
+    char *instance_name;
 
     // Install the parachute!
     atexit(cleanup);
@@ -1282,6 +1316,8 @@ main (int argc, char **argv)
     // A safe default
     areas = 10;
     wm_name = NULL;
+
+    instance_name = strip_path(argv[0]);
 
     // Connect to the Xserver and initialize scr
     xconn();
@@ -1339,9 +1375,11 @@ main (int argc, char **argv)
     by = geom_v[3];
 
     // Do the heavy lifting
-    init(wm_name);
+    init(wm_name, instance_name);
     // The string is strdup'd when the command line arguments are parsed
     free(wm_name);
+    // The string is strdup'd when stripping argv[0]
+    free(instance_name);
     // Get the fd to Xserver
     pollin[1].fd = xcb_get_file_descriptor(c);
 
