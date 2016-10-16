@@ -765,7 +765,7 @@ set_ewmh_atoms (void)
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_STRUT_PARTIAL], XCB_ATOM_CARDINAL, 32, 12, strut);
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_STRUT], XCB_ATOM_CARDINAL, 32, 4, strut);
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8, 3, "bar");
-        xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, XCB_ATOM_WM_CLASS, XCB_ATOM_STRING, 8, 12, "lemonbar\0bar");
+        xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, XCB_ATOM_WM_CLASS, XCB_ATOM_STRING, 8, 12, "lemonbar\0Bar");
     }
 }
 
@@ -1216,13 +1216,13 @@ init (char *wm_name, char *wm_instance)
             char *wm_class;
             int wm_class_offset, wm_class_len;
 
-            // WM_CLASS is nullbyte seperated: wm_instance + "\0bar\0"
+            // WM_CLASS is nullbyte seperated: wm_instance + "\0Bar\0"
             wm_class_offset = strlen(wm_instance) + 1;
             wm_class_len = wm_class_offset + 4;
 
             wm_class = calloc(1, wm_class_len + 1);
             strcpy(wm_class, wm_instance);
-            strcpy(wm_class+wm_class_offset, "bar");
+            strcpy(wm_class+wm_class_offset, "Bar");
 
             xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, XCB_ATOM_WM_CLASS, XCB_ATOM_STRING, 8, wm_class_len, wm_class);
 
