@@ -1,4 +1,5 @@
 // vim:sw=4:ts=4:et:
+#define _POSIX_C_SOURCE 200809L
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -12,7 +13,9 @@
 #include <errno.h>
 #include <xcb/xcb.h>
 #include <xcb/xcbext.h>
+#if WITH_XINERAMA
 #include <xcb/xinerama.h>
+#endif
 #include <xcb/randr.h>
 
 #include <X11/Xft/Xft.h>
@@ -1116,6 +1119,7 @@ get_randr_monitors (void)
     monitor_create_chain(r, valid);
 }
 
+#ifdef WITH_XINERAMA
 void
 get_xinerama_monitors (void)
 {
@@ -1144,6 +1148,7 @@ get_xinerama_monitors (void)
 
     monitor_create_chain(rects, screens);
 }
+#endif
 
 xcb_visualid_t
 get_visual (void)
@@ -1274,8 +1279,10 @@ init (char *wm_name)
     qe_reply = xcb_get_extension_data(c, &xcb_randr_id);
 
     if (qe_reply && qe_reply->present) {
-		get_randr_monitors();
-    } else {
+        get_randr_monitors();
+    }
+#if WITH_XINERAMA
+    else {
         qe_reply = xcb_get_extension_data(c, &xcb_xinerama_id);
 
         // Check if Xinerama extension is present and active
@@ -1289,6 +1296,7 @@ init (char *wm_name)
             free(xia_reply);
         }
     }
+#endif
 
     if (!monhead) {
         // If I fits I sits
@@ -1336,7 +1344,7 @@ init (char *wm_name)
 
         // Set the WM_NAME atom to the user specified value
         if (wm_name)
-            xcb_change_property(c, XCB_PROP_MODE_REPLACE, monhead->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8 ,strlen(wm_name), wm_name);
+            xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8 ,strlen(wm_name), wm_name);
     }
 
     char color[] = "#ffffff";
@@ -1446,7 +1454,7 @@ main (int argc, char **argv)
                 exit (EXIT_SUCCESS);
             case 'g': (void)parse_geometry_string(optarg, geom_v); break;
             case 'p': permanent = true; break;
-            case 'n': wm_name = optarg; break;
+            case 'n': wm_name = strdup(optarg); break;
             case 'b': topbar = false; break;
             case 'd': dock = true; break;
             case 'f': font_load(optarg); break;
@@ -1482,6 +1490,8 @@ main (int argc, char **argv)
 
     // Do the heavy lifting
     init(wm_name);
+    // The string is strdup'd when the command line arguments are parsed
+    free(wm_name);
     // Get the fd to Xserver
     pollin[1].fd = xcb_get_file_descriptor(c);
     for (;;) {
@@ -1518,8 +1528,8 @@ main (int argc, char **argv)
                                 area_t *area = area_get(press_ev->event, press_ev->detail, press_ev->event_x);
                                 // Respond to the click
                                 if (area) {
-                                    write(STDOUT_FILENO, area->cmd, strlen(area->cmd));
-                                    write(STDOUT_FILENO, "\n", 1);
+                                    (void)write(STDOUT_FILENO, area->cmd, strlen(area->cmd));
+                                    (void)write(STDOUT_FILENO, "\n", 1);
                                 }
                             }
                         break;
