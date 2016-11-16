@@ -752,11 +752,11 @@ set_ewmh_atoms (void)
         if (topbar) {
             strut[2] = bh;
             strut[8] = mon->x;
-            strut[9] = mon->x + mon->width;
+            strut[9] = mon->x + mon->width - 1;
         } else {
             strut[3]  = bh;
             strut[10] = mon->x;
-            strut[11] = mon->x + mon->width;
+            strut[11] = mon->x + mon->width - 1;
         }
 
         xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_WINDOW_TYPE], XCB_ATOM_ATOM, 32, 1, &atom_list[NET_WM_WINDOW_TYPE_DOCK]);
