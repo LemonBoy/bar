@@ -65,6 +65,10 @@ Set the foreground color of the bar. Accepts the same color formats as B<-B>.
 
 Set the underline color of the bar. Accepts the same color formats as B<-B>.
 
+=item B<-o>
+
+Print a message ("started\n") to sdtout when the bar has been initialized.
+
 =back
 
 =head1 FORMATTING
