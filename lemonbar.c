@@ -81,6 +81,17 @@ enum {
     GC_MAX
 };
 
+enum {
+    NET_WM_WINDOW_TYPE,
+    NET_WM_WINDOW_TYPE_DOCK,
+    NET_WM_DESKTOP,
+    NET_WM_STRUT_PARTIAL,
+    NET_WM_STRUT,
+    NET_WM_STATE,
+    NET_WM_STATE_STICKY,
+    NET_WM_STATE_ABOVE,
+};
+
 #define MAX_FONT_COUNT 5
 
 static xcb_connection_t *c;
@@ -100,6 +111,18 @@ static int bu = 1; // Underline height
 static rgba_t fgc, bgc, ugc;
 static rgba_t dfgc, dbgc, dugc;
 static area_stack_t area_stack;
+static const char *atom_names[] = {
+    "_NET_WM_WINDOW_TYPE",
+    "_NET_WM_WINDOW_TYPE_DOCK",
+    "_NET_WM_DESKTOP",
+    "_NET_WM_STRUT_PARTIAL",
+    "_NET_WM_STRUT",
+    "_NET_WM_STATE",
+    // Leave those at the end since are batch-set
+    "_NET_WM_STATE_STICKY",
+    "_NET_WM_STATE_ABOVE",
+};
+static xcb_atom_t atom_list[sizeof(atom_names) / sizeof(char *)];
 
 void
 update_gc (void)
@@ -342,7 +365,6 @@ set_attribute (const char modifier, const char attribute)
     }
 }
 
-
 area_t *
 area_get (xcb_window_t win, const int btn, const int x)
 {
@@ -416,7 +438,7 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
     }
 
     if (area_stack.at + 1 > area_stack.max) {
-        fprintf(stderr, "Cannot add any more clickable areas (used %d/%d)\n", 
+        fprintf(stderr, "Cannot add any more clickable areas (used %d/%d)\n",
                 area_stack.at, area_stack.max);
         return false;
     }
@@ -703,34 +725,11 @@ font_load (const char *pattern)
     font_list[font_count++] = ret;
 }
 
-enum {
-    NET_WM_WINDOW_TYPE,
-    NET_WM_WINDOW_TYPE_DOCK,
-    NET_WM_DESKTOP,
-    NET_WM_STRUT_PARTIAL,
-    NET_WM_STRUT,
-    NET_WM_STATE,
-    NET_WM_STATE_STICKY,
-    NET_WM_STATE_ABOVE,
-};
-
 void
 set_ewmh_atoms (void)
 {
-    const char *atom_names[] = {
-        "_NET_WM_WINDOW_TYPE",
-        "_NET_WM_WINDOW_TYPE_DOCK",
-        "_NET_WM_DESKTOP",
-        "_NET_WM_STRUT_PARTIAL",
-        "_NET_WM_STRUT",
-        "_NET_WM_STATE",
-        // Leave those at the end since are batch-set
-        "_NET_WM_STATE_STICKY",
-        "_NET_WM_STATE_ABOVE",
-    };
-    const int atoms = sizeof(atom_names)/sizeof(char *);
+    const int atoms = sizeof(atom_names) / sizeof(char *);
     xcb_intern_atom_cookie_t atom_cookie[atoms];
-    xcb_atom_t atom_list[atoms];
     xcb_intern_atom_reply_t *atom_reply;
 
     // As suggested fetch all the cookies first (yum!) and then retrieve the
@@ -768,6 +767,44 @@ set_ewmh_atoms (void)
     }
 }
 
+void
+update_ewmh_atoms (void)
+{
+    // Only desktops that support EWMH should continue
+    if (!atom_list[0])
+        return;
+
+    // Update struts
+    for (monitor_t *mon = monhead; mon; mon = mon->next) {
+        int strut[12] = {0};
+        if (topbar) {
+            strut[2] = bh;
+            strut[8] = mon->x;
+            strut[9] = mon->x + mon->width - 1;
+        } else {
+            strut[3]  = bh;
+            strut[10] = mon->x;
+            strut[11] = mon->x + mon->width - 1;
+        }
+
+        xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_STRUT_PARTIAL], XCB_ATOM_CARDINAL, 32, 12, strut);
+        xcb_change_property(c, XCB_PROP_MODE_REPLACE, mon->window, atom_list[NET_WM_STRUT], XCB_ATOM_CARDINAL, 32, 4, strut);
+    }
+}
+
+void
+create_pixmap (monitor_t *mon)
+{
+    if (mon->pixmap) {
+        xcb_free_pixmap(c, mon->pixmap);
+    }
+
+    int depth = (visual == scr->root_visual) ? XCB_COPY_FROM_PARENT : 32;
+
+    mon->pixmap = xcb_generate_id(c);
+    xcb_create_pixmap(c, depth, mon->pixmap, mon->window, mon->width, bh);
+}
+
 monitor_t *
 monitor_new (int x, int y, int width, int height)
 {
@@ -790,11 +827,9 @@ monitor_new (int x, int y, int width, int height)
             ret->x, ret->y, width, bh, 0,
             XCB_WINDOW_CLASS_INPUT_OUTPUT, visual,
             XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP,
-            (const uint32_t []){ bgc.v, bgc.v, dock, XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_BUTTON_PRESS, colormap });
+            (const uint32_t []){ bgc.v, bgc.v, dock, XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_STRUCTURE_NOTIFY, colormap });
 
-    ret->pixmap = xcb_generate_id(c);
-    xcb_create_pixmap(c, depth, ret->pixmap, ret->window, width, bh);
-
+    create_pixmap(ret);
     return ret;
 }
 
@@ -1262,6 +1297,7 @@ main (int argc, char **argv)
     xcb_generic_event_t *ev;
     xcb_expose_event_t *expose_ev;
     xcb_button_press_event_t *press_ev;
+    xcb_configure_notify_event_t *notify_ev;
     char input[4096] = {0, };
     bool permanent = false;
     int geom_v[4] = { -1, -1, 0, 0 };
@@ -1381,6 +1417,26 @@ main (int argc, char **argv)
                                     (void)write(STDOUT_FILENO, area->cmd, strlen(area->cmd));
                                     (void)write(STDOUT_FILENO, "\n", 1);
                                 }
+                            }
+                            break;
+                        case XCB_CONFIGURE_NOTIFY:
+                            notify_ev = (xcb_configure_notify_event_t *)ev;
+
+                            for (monitor_t *mon = monhead; mon; mon = mon->next) {
+                                if (mon->window != notify_ev->window)
+                                    continue;
+
+                                mon->x = notify_ev->x;
+                                mon->y = notify_ev->y;
+                                bw = mon->width = notify_ev->width;
+                                bh = notify_ev->height;
+
+                                create_pixmap(mon); // Xorg doesn't allow resizing pixmaps, so we create a new one
+                                update_ewmh_atoms();
+
+                                // Reprocess last input using the new geometry
+                                parse(input);
+                                redraw = true;
                             }
                             break;
                     }
