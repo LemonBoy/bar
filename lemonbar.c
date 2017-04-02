@@ -131,6 +131,8 @@ static char    xft_width[MAX_WIDTHS];
 static int num_outputs = 0;
 static char **output_names = NULL;
 
+static void parse_output_string(char *);
+
 void
 update_gc (void)
 {
@@ -1074,6 +1076,9 @@ get_randr_monitors (void)
     for (i = 0; i < num; i++) {
         xcb_randr_get_output_info_reply_t *oi_reply;
         xcb_randr_get_crtc_info_reply_t *ci_reply;
+        int namelen;
+        uint8_t *str;
+        char *name;
 
         oi_reply = xcb_randr_get_output_info_reply(c, xcb_randr_get_output_info(c, outputs[i], XCB_CURRENT_TIME), NULL);
 
@@ -1093,29 +1098,28 @@ get_randr_monitors (void)
             return;
         }
 
+        namelen = xcb_randr_get_output_info_name_length(oi_reply);
+        name = malloc(namelen+1);
+
+        if (!name) {
+            fprintf(stderr, "Failed to allocate randr output name\n");
+            exit(EXIT_FAILURE);
+        }
+
+        str = xcb_randr_get_output_info_name(oi_reply);
+        memcpy(name, str, namelen);
+        name[namelen] = '\0';
+
+        if (!name || name[0] == '\0')
+            continue;
+
+        parse_output_string(name);
+
         if (num_outputs) {
             for (j = 0; j < num_outputs; j++) {
-                int namelen;
-                uint8_t *str;
-                char *name;
-
-                fprintf(stderr, "output_names: %s\n", output_names[j]);
-
                 // if this output name has been allocated, skip it
                 if (!output_names[j])
                     continue;
-
-                namelen = xcb_randr_get_output_info_name_length(oi_reply);
-                name = malloc(namelen+1);
-
-                if (!name) {
-                    fprintf(stderr, "Failed to allocate randr output name\n");
-                    exit(EXIT_FAILURE);
-                }
-
-                str = xcb_randr_get_output_info_name(oi_reply);
-                memcpy(name, str, namelen);
-                name[namelen] = '\0';
 
                 if (!memcmp(output_names[j], name, namelen)) {
                     mons[j] = (monitor_t){ name, ci_reply->x, ci_reply->y, ci_reply->width, ci_reply->height, 0, 0, NULL, NULL };
