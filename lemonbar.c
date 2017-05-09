@@ -602,6 +602,10 @@ parse (char *text)
             // Eat the trailing }
             p++;
         } else { // utf-8 -> ucs-2
+            // Escaped % symbol, eat the first one
+            if (p[0] == '%' && p[1] == '%')
+                p++;
+
             uint8_t *utf = (uint8_t *)p;
             uint16_t ucs;
 
