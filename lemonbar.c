@@ -1579,7 +1579,6 @@ main (int argc, char **argv)
                         "\t-o Add a vertical offset to the text, it can be negative\n", argv[0]);
                 exit (EXIT_SUCCESS);
             case 'g': (void)parse_geometry_string(optarg, geom_v); break;
-            case 'o': (void)parse_output_string(optarg); break;
             case 'p': permanent = true; break;
             case 'n': wm_name = strdup(optarg); break;
             case 'b': topbar = false; break;
