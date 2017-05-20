@@ -82,6 +82,7 @@ enum {
 };
 
 #define MAX_FONT_COUNT 5
+#define INPUT_SIZE 4024
 
 static xcb_connection_t *c;
 static xcb_screen_t *scr;
@@ -100,6 +101,29 @@ static int bu = 1; // Underline height
 static rgba_t fgc, bgc, ugc;
 static rgba_t dfgc, dbgc, dugc;
 static area_stack_t area_stack;
+
+int 
+generate_input(const char * command, char * input, size_t input_size) 
+{
+    FILE * command_output;
+
+    if ((command_output = popen(command, "r")) == NULL) {
+        fprintf(stderr, "Could not run provided command\n");
+        return -1;
+    }
+
+    if (fgets(input, input_size, command_output) == NULL) {
+        fprintf(stderr, "Command did not produce any output\n");
+        return -1;
+    }
+
+    if (pclose(command_output) == -1) {
+        fprintf(stderr, "Could not close pipe to command\n");
+        return -1;
+    }
+
+    return 0;
+}
 
 void
 update_gc (void)
@@ -1193,13 +1217,13 @@ init (char *wm_name)
 
     // Create the gc for drawing
     gc[GC_DRAW] = xcb_generate_id(c);
-    xcb_create_gc(c, gc[GC_DRAW], monhead->pixmap, XCB_GC_FOREGROUND, (const uint32_t []){ fgc.v });
+    xcb_create_gc(c, gc[GC_DRAW], monhead->pixmap, XCB_GC_FOREGROUND | XCB_GC_GRAPHICS_EXPOSURES, (const uint32_t []){ fgc.v, 0 });
 
     gc[GC_CLEAR] = xcb_generate_id(c);
-    xcb_create_gc(c, gc[GC_CLEAR], monhead->pixmap, XCB_GC_FOREGROUND, (const uint32_t []){ bgc.v });
+    xcb_create_gc(c, gc[GC_CLEAR], monhead->pixmap, XCB_GC_FOREGROUND | XCB_GC_GRAPHICS_EXPOSURES, (const uint32_t []){ bgc.v, 0 });
 
     gc[GC_ATTR] = xcb_generate_id(c);
-    xcb_create_gc(c, gc[GC_ATTR], monhead->pixmap, XCB_GC_FOREGROUND, (const uint32_t []){ ugc.v });
+    xcb_create_gc(c, gc[GC_ATTR], monhead->pixmap, XCB_GC_FOREGROUND | XCB_GC_GRAPHICS_EXPOSURES, (const uint32_t []){ ugc.v, 0 });
 
     // Make the bar visible and clear the pixmap
     for (monitor_t *mon = monhead; mon; mon = mon->next) {
@@ -1266,11 +1290,14 @@ main (int argc, char **argv)
     xcb_generic_event_t *ev;
     xcb_expose_event_t *expose_ev;
     xcb_button_press_event_t *press_ev;
-    char input[4096] = {0, };
+    char input[INPUT_SIZE] = {0, };
     bool permanent = false;
     int geom_v[4] = { -1, -1, 0, 0 };
     int ch, areas;
     char *wm_name;
+
+    char *input_command = NULL;
+    int input_timeout = -1;
 
     // Install the parachute!
     atexit(cleanup);
@@ -1289,7 +1316,7 @@ main (int argc, char **argv)
     // Connect to the Xserver and initialize scr
     xconn();
 
-    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:U:n:")) != -1) {
+    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:U:n:c:t:")) != -1) {
         switch (ch) {
             case 'h':
                 printf ("lemonbar version %s\n", VERSION);
@@ -1304,7 +1331,9 @@ main (int argc, char **argv)
                         "\t-n Set the WM_NAME atom to the specified value for this bar\n"
                         "\t-u Set the underline/overline height in pixels\n"
                         "\t-B Set background color in #AARRGGBB\n"
-                        "\t-F Set foreground color in #AARRGGBB\n", argv[0]);
+                        "\t-F Set foreground color in #AARRGGBB\n"
+                        "\t-c Command to execute instead of reading from stdin\n"
+                        "\t-t Timeout (sec) to wait between updating with the command\n", argv[0]);
                 exit (EXIT_SUCCESS);
             case 'g': (void)parse_geometry_string(optarg, geom_v); break;
             case 'p': permanent = true; break;
@@ -1317,7 +1346,19 @@ main (int argc, char **argv)
             case 'F': dfgc = fgc = parse_color(optarg, NULL, (rgba_t)0xffffffffU); break;
             case 'U': dugc = ugc = parse_color(optarg, NULL, fgc); break;
             case 'a': areas = strtoul(optarg, NULL, 10); break;
+            case 'c': input_command = optarg; break;
+            case 't': input_timeout = strtol(optarg, NULL, 10) * 1000; break;
         }
+    }
+
+    // Don't wait for input if there is a command, but no user defined timeout
+    if (input_command != NULL && input_timeout < 1) {
+        input_timeout = 5000;
+    }
+
+    // Revert to normal usage if there is a timeout but no command
+    if (input_command == NULL && input_timeout >= 1) {
+        input_timeout = -1;
     }
 
     // Initialize the stack holding the clickable areas
@@ -1355,12 +1396,12 @@ main (int argc, char **argv)
         if (xcb_connection_has_error(c))
             break;
 
-        if (poll(pollin, 2, -1) > 0) {
+        if (poll(pollin, 2, input_timeout) > 0) {
             if (pollin[0].revents & POLLHUP) {      // No more data...
                 if (permanent) pollin[0].fd = -1;   // ...null the fd and continue polling :D
                 else break;                         // ...bail out
             }
-            if (pollin[0].revents & POLLIN) { // New input, process it
+            if (pollin[0].revents & POLLIN && input_command == NULL) { // New input, process it
                 if (fgets(input, sizeof(input), stdin) == NULL)
                     break; // EOF received
 
@@ -1377,6 +1418,9 @@ main (int argc, char **argv)
                                 redraw = true;
                             break;
                         case XCB_BUTTON_PRESS:
+                            if (expose_ev->count == 0)
+                                redraw = true;
+
                             press_ev = (xcb_button_press_event_t *)ev;
                             {
                                 area_t *area = area_get(press_ev->event, press_ev->detail, press_ev->event_x);
@@ -1392,6 +1436,17 @@ main (int argc, char **argv)
                     free(ev);
                 }
             }
+        }
+
+        // If there is a user supplied command, use it to generate input
+        if (input_command != NULL) {
+            if (generate_input(input_command, input, INPUT_SIZE) != 0) {
+                fprintf(stderr, "Failed to generate input from command\n");
+                return EXIT_FAILURE;
+            }
+
+            parse(input);
+            redraw = true;
         }
 
         if (redraw) { // Copy our temporary pixmap onto the window
