@@ -6,7 +6,7 @@ lemonbar - Featherweight lemon-scented bar
 
 =head1 SYNOPSIS
 
-I<lemonbar> [-h | -g I<width>B<x>I<height>B<+>I<x>B<+>I<y> | -b | -d | -f I<font> | -p | -n I<name> | -u I<pixel> | -B I<color> | -F I<color> | -U I<color>]
+I<lemonbar> [-h | -g I<width>B<x>I<height>B<+>I<x>B<+>I<y> | -b | -d | -f I<font> | -p | -u I<pixel> | -B I<color> | -F I<color> | -U I<color>]
 
 =head1 DESCRIPTION
 
@@ -44,10 +44,6 @@ Set number of clickable areas (default is 10)
 =item B<-p>
 
 Make the bar permanent, don't exit after the standard input is closed.
-
-=item B<-n> I<name>
-
-Set the WM_NAME atom value for the bar.
 
 =item B<-u> I<pixel>
 
