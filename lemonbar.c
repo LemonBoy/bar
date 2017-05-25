@@ -1268,6 +1268,7 @@ main (int argc, char **argv)
     xcb_button_press_event_t *press_ev;
     char input[4096] = {0, };
     bool permanent = false;
+    bool startup_notification = false;
     int geom_v[4] = { -1, -1, 0, 0 };
     int ch, areas;
     char *wm_name;
@@ -1289,7 +1290,7 @@ main (int argc, char **argv)
     // Connect to the Xserver and initialize scr
     xconn();
 
-    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:U:n:")) != -1) {
+    while ((ch = getopt(argc, argv, "hg:bdf:a:pu:B:F:U:n:o")) != -1) {
         switch (ch) {
             case 'h':
                 printf ("lemonbar version %s\n", VERSION);
@@ -1304,7 +1305,8 @@ main (int argc, char **argv)
                         "\t-n Set the WM_NAME atom to the specified value for this bar\n"
                         "\t-u Set the underline/overline height in pixels\n"
                         "\t-B Set background color in #AARRGGBB\n"
-                        "\t-F Set foreground color in #AARRGGBB\n", argv[0]);
+                        "\t-F Set foreground color in #AARRGGBB\n"
+                        "\t-o Write a message to stdout when started\n", argv[0]);
                 exit (EXIT_SUCCESS);
             case 'g': (void)parse_geometry_string(optarg, geom_v); break;
             case 'p': permanent = true; break;
@@ -1317,6 +1319,7 @@ main (int argc, char **argv)
             case 'F': dfgc = fgc = parse_color(optarg, NULL, (rgba_t)0xffffffffU); break;
             case 'U': dugc = ugc = parse_color(optarg, NULL, fgc); break;
             case 'a': areas = strtoul(optarg, NULL, 10); break;
+            case 'o': startup_notification = true; break;
         }
     }
 
@@ -1343,6 +1346,11 @@ main (int argc, char **argv)
 
     // Do the heavy lifting
     init(wm_name);
+    
+    if(startup_notification){
+        (void)write(STDOUT_FILENO, "started\n", 8);
+    }
+    
     // The string is strdup'd when the command line arguments are parsed
     free(wm_name);
     // Get the fd to Xserver
