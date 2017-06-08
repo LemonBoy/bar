@@ -1126,12 +1126,6 @@ get_randr_monitors (void)
                 else
                     free(name);
             }
-            // if this output is not in the list, skip it
-            if (j == num_outputs) {
-                mons[i].width = 0;
-                free(oi_reply);
-                continue;
-            }
         }
         else {
             // There's no need to handle rotated screens here (see #69)
@@ -1150,36 +1144,12 @@ get_randr_monitors (void)
     if (num_outputs)
         free(output_names);
 
-    // Check for clones and inactive outputs
-    for (i = 0; i < num; i++) {
-        if (mons[i].width == 0)
-            continue;
-
-        for (j = 0; j < num; j++) {
-            // Does I contain J ?
-
-            if (i != j && mons[j].width && !mons[j].name) {
-                if (mons[j].x >= mons[i].x && mons[j].x + mons[j].width <= mons[i].x + mons[i].width &&
-                    mons[j].y >= mons[i].y && mons[j].y + mons[j].height <= mons[i].y + mons[i].height) {
-                    mons[j].width = 0;
-                    valid--;
-                }
-            }
-        }
-    }
-
-    if (valid < 1) {
+    if (valid == 0) {
         fprintf(stderr, "No usable RandR output found\n");
         return;
     }
 
-    monitor_t m[valid];
-
-    for (i = j = 0; i < num && j < valid; i++)
-        if (mons[i].width != 0)
-            m[j++] = mons[i];
-
-    monitor_create_chain(m, valid);
+    monitor_create_chain(mons, valid);
 }
 
 #ifdef WITH_XINERAMA
