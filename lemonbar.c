@@ -600,9 +600,6 @@ parse (char *text)
     // Reset the stack position
     area_stack.at = 0;
 
-    for (monitor_t *m = monhead; m != NULL; m = m->next)
-        fill_rect(m->pixmap, gc[GC_CLEAR], 0, 0, m->width, bh);
-
     /* Create xft drawable */
     if (!(xft_draw = XftDrawCreate (dpy, cur_mon->pixmap, visual_ptr , colormap))) {
         fprintf(stderr, "Couldn't create xft drawable\n");
