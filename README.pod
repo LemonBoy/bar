@@ -6,7 +6,7 @@ lemonbar - Featherweight lemon-scented bar
 
 =head1 SYNOPSIS
 
-I<lemonbar> [-h | -g I<width>B<x>I<height>B<+>I<x>B<+>I<y> | -b | -d | -f I<font> | -p | -n I<name> | -u I<pixel> | -B I<color> | -F I<color> | -U I<color>]
+I<lemonbar> [-h | -g I<width>B<x>I<height>B<+>I<x>B<+>I<y> | -b | -d | -f I<font> | -p | -n I<name> | -u I<pixel> | -B I<color> | -F I<color> | -U I<color> | -o I<offset> ]
 
 =head1 DESCRIPTION
 
@@ -24,6 +24,10 @@ Display the help and exit.
 
 Set the window geometry. If a parameter is omitted it's filled with the default value. If the I<y> parameter is specified along with the B<-b> switch then the position is relative to the bottom of the screen.
 
+=item B<-o> I<name>
+
+Set next output to I<name>. May be used multiple times; order is significant. If any B<-o> options are given, only B<-o> specified monitors will be used. Invalid output names are silently ignored. (only supported on randr configurations at this time)
+
 =item B<-b>
 
 Dock the bar at the bottom of the screen.
@@ -35,7 +39,7 @@ Force docking without asking the window manager. This is needed if the window ma
 =item B<-f> I<font>
 
 Define the font to load into one of the five slots (the number of slots is hardcoded and can be tweaked by
-changing the MAX_FONT_COUNT parameter in the source code).
+changing the MAX_FONT_COUNT parameter in the source code). This version supports fontconfig font specifiers and anti-aliased fonts.
 
 =item B<-a> I<number>
 
@@ -60,6 +64,10 @@ Set the background color of the bar. I<color> must be specified in the hex forma
 =item B<-F> I<color>
 
 Set the foreground color of the bar. Accepts the same color formats as B<-B>.
+
+=item B<-o> I<offset>
+
+Add a vertical offset to the text. I<offset> must be a number and can be negative. I<-o -3> will push the text 3 pixels up.
 
 =item B<-U> I<color>
 
@@ -138,6 +146,11 @@ First/last monitor.
 =item I<0-9>
 
 Nth monitor.
+
+=item I<n>B<NAME>
+
+Named monitor.
+Eg. I<%{SnHDMI-0} This text will show up on the HDMI-0 output>
 
 =back
 
