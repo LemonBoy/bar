@@ -69,7 +69,7 @@ Set the underline color of the bar. Accepts the same color formats as B<-B>.
 
 =head1 FORMATTING
 
-lemonbar provides a screenrc-inspired formatting syntax to allow full customization at runtime. Every formatting block is opened with C<%{> and closed by C<}> and accepts the following commands, the parser tries it's best to handle malformed input. Use C<%%> to get a literal percent sign (C<%>).
+lemonbar provides a screenrc-inspired formatting syntax to allow full customization at runtime. Every formatting block is opened with C<%{> and closed by C<}> and accepts the following commands, the parser tries its best to handle malformed input. Use C<%%> to get a literal percent sign (C<%>).
 
 =over
 
