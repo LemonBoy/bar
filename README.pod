@@ -12,6 +12,12 @@ I<lemonbar> [-h | -g I<width>B<x>I<height>B<+>I<x>B<+>I<y> | -b | -d | -f I<font
 
 B<lemonbar> (formerly known as B<bar>) is a lightweight bar entirely based on XCB. Provides full UTF-8 support, basic formatting, RandR and Xinerama support and EWMH compliance without wasting your precious memory.
 
+=head1 INPUT
+
+lemonbar won't display anything on its own. It needs input from stdin for displaying stuff. A simple example for showing "Hello World" on the bar would be
+
+    echo "Hello World" | lemonbar -p
+
 =head1 OPTIONS
 
 =over
