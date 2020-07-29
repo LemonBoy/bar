@@ -22,7 +22,7 @@
 #include <X11/Xft/Xft.h>
 #include <X11/Xlib-xcb.h>
 
-// Here bet  dragons
+// Here be dragons
 
 #define max(a,b) ((a) > (b) ? (a) : (b))
 #define min(a,b) ((a) < (b) ? (a) : (b))
