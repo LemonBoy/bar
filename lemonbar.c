@@ -41,11 +41,11 @@ typedef struct monitor_t {
 } monitor_t;
 
 typedef struct area_t {
-    unsigned int begin:16;
-    unsigned int end:16;
-    bool active:1;
-    int align:3;
-    unsigned int button:3;
+    unsigned begin;
+    unsigned end;
+    bool complete;
+    unsigned align;
+    unsigned button;
     xcb_window_t window;
     char *cmd;
 } area_t;
@@ -61,8 +61,8 @@ typedef union rgba_t {
 } rgba_t;
 
 typedef struct area_stack_t {
-    int at, max;
-    area_t *area;
+    area_t *ptr;
+    unsigned int index, alloc;
 } area_stack_t;
 
 enum {
@@ -353,8 +353,8 @@ area_t *
 area_get (xcb_window_t win, const int btn, const int x)
 {
     // Looping backwards ensures that we get the innermost area first
-    for (int i = area_stack.at - 1; i >= 0; i--) {
-        area_t *a = &area_stack.area[i];
+    for (int i = area_stack.index - 1; i >= 0; i--) {
+        area_t *a = &area_stack.ptr[i];
         if (a->window == win && a->button == btn && x >= a->begin && x < a->end)
             return a;
     }
@@ -369,9 +369,9 @@ area_shift (xcb_window_t win, const int align, int delta)
     if (align == ALIGN_C)
         delta /= 2;
 
-    for (int i = 0; i < area_stack.at; i++) {
-        area_t *a = &area_stack.area[i];
-        if (a->window == win && a->align == align && !a->active) {
+    for (int i = 0; i < area_stack.index; i++) {
+        area_t *a = &area_stack.ptr[i];
+        if (a->window == win && a->align == align && !a->complete) {
             a->begin -= delta;
             a->end -= delta;
         }
@@ -390,9 +390,9 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
         *end = str;
 
         // Find most recent unclosed area.
-        for (i = area_stack.at - 1; i >= 0 && !area_stack.area[i].active; i--)
+        for (i = area_stack.index - 1; i >= 0 && !area_stack.ptr[i].complete; i--)
             ;
-        a = &area_stack.area[i];
+        a = &area_stack.ptr[i];
 
         // Basic safety checks
         if (!a->cmd || a->align != align || a->window != mon->window) {
@@ -417,16 +417,19 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
                 break;
         }
 
-        a->active = false;
+        a->complete = false;
         return true;
     }
 
-    if (area_stack.at + 1 > area_stack.max) {
-        fprintf(stderr, "Cannot add any more clickable areas (used %d/%d)\n", 
-                area_stack.at, area_stack.max);
-        return false;
+    if (area_stack.index + 1 > area_stack.alloc) {
+        area_stack.ptr = realloc(area_stack.ptr, sizeof(area_t) * (area_stack.index + 1));
+        if (!area_stack.ptr) {
+            fprintf(stderr, "Failed to allocate new input areas\n");
+            exit(EXIT_FAILURE);
+        }
+        area_stack.alloc += 1;
     }
-    a = &area_stack.area[area_stack.at++];
+    a = &area_stack.ptr[area_stack.index++];
 
     // Found the closing : and check if it's just an escaped one
     for (trail = strchr(++str, ':'); trail && trail[-1] == '\\'; trail = strchr(trail + 1, ':'))
@@ -451,7 +454,7 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
 
     // This is a pointer to the string buffer allocated in the main
     a->cmd = str;
-    a->active = true;
+    a->complete = true;
     a->align = align;
     a->begin = x;
     a->window = mon->window;
@@ -524,7 +527,7 @@ parse (char *text)
     attrs = 0;
 
     // Reset the stack position
-    area_stack.at = 0;
+    area_stack.index = 0;
 
     for (monitor_t *m = monhead; m != NULL; m = m->next)
         fill_rect(m->pixmap, gc[GC_CLEAR], 0, 0, m->width, bh);
@@ -1375,7 +1378,7 @@ init (char *wm_name)
 void
 cleanup (void)
 {
-    free(area_stack.area);
+    free(area_stack.ptr);
 
     for (int i = 0; i < font_count; i++) {
         xcb_close_font(c, font_list[i]->ptr);
@@ -1426,7 +1429,7 @@ main (int argc, char **argv)
     size_t input_offset = 0;
     bool permanent = false;
     int geom_v[4] = { -1, -1, 0, 0 };
-    int ch, areas;
+    int ch;
     char *wm_name;
 
     // Install the parachute!
@@ -1440,7 +1443,6 @@ main (int argc, char **argv)
     dugc = ugc = fgc;
 
     // A safe default
-    areas = 10;
     wm_name = NULL;
 
     // Connect to the Xserver and initialize scr
@@ -1450,14 +1452,13 @@ main (int argc, char **argv)
         switch (ch) {
             case 'h':
                 printf ("lemonbar version %s\n", VERSION);
-                printf ("usage: %s [-h | -g | -o | -b | -d | -f | -a | -p | -n | -u | -B | -F]\n"
+                printf ("usage: %s [-h | -g | -o | -b | -d | -f | -p | -n | -u | -B | -F]\n"
                         "\t-h Show this help\n"
                         "\t-g Set the bar geometry {width}x{height}+{xoffset}+{yoffset}\n"
                         "\t-o Add randr output by name\n"
                         "\t-b Put the bar at the bottom of the screen\n"
                         "\t-d Force docking (use this if your WM isn't EWMH compliant)\n"
                         "\t-f Set the font name to use\n"
-                        "\t-a Number of clickable areas available (default is 10)\n"
                         "\t-p Don't close after the data ends\n"
                         "\t-n Set the WM_NAME atom to the specified value for this bar\n"
                         "\t-u Set the underline/overline height in pixels\n"
@@ -1475,24 +1476,17 @@ main (int argc, char **argv)
             case 'B': dbgc = bgc = parse_color(optarg, NULL, BLACK); break;
             case 'F': dfgc = fgc = parse_color(optarg, NULL, WHITE); break;
             case 'U': dugc = ugc = parse_color(optarg, NULL, fgc); break;
-            case 'a': areas = strtoul(optarg, NULL, 10); break;
         }
     }
 
     // Initialize the stack holding the clickable areas
-    area_stack.at = 0;
-    area_stack.max = areas;
-    if (areas) {
-        area_stack.area = calloc(areas, sizeof(area_t));
-
-        if (!area_stack.area) {
-            fprintf(stderr, "Could not allocate enough memory for %d clickable areas, try lowering the number\n", areas);
-            return EXIT_FAILURE;
-        }
+    area_stack.index = 0;
+    area_stack.alloc = 10;
+    area_stack.ptr = calloc(10, sizeof(area_t));
+    if (!area_stack.ptr) {
+        fprintf(stderr, "Failed to allocate enough input areas\n");
+        return EXIT_FAILURE;
     }
-    else
-        area_stack.area = NULL;
-
 
     // Copy the geometry values in place
     bw = geom_v[0];
