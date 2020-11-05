@@ -1009,7 +1009,6 @@ get_randr_monitors (void)
     num = xcb_randr_get_screen_resources_current_outputs_length(rres_reply);
     outputs = xcb_randr_get_screen_resources_current_outputs(rres_reply);
 
-
     // There should be at least one output
     if (num < 1) {
         free(rres_reply);
@@ -1017,6 +1016,9 @@ get_randr_monitors (void)
     }
 
     monitor_t mons[num];
+    // Every entry starts with a size of 0, making it invalid until we fill in
+    // the data retrieved from the Xserver.
+    memset(mons, 0, sizeof(mons));
 
     // Get all outputs
     for (i = 0; i < num; i++) {
@@ -1028,7 +1030,6 @@ get_randr_monitors (void)
         // Output disconnected or not attached to any CRTC ?
         if (!oi_reply || oi_reply->crtc == XCB_NONE || oi_reply->connection != XCB_RANDR_CONNECTION_CONNECTED) {
             free(oi_reply);
-            mons[i].width = 0;
             continue;
         }
 
@@ -1043,38 +1044,21 @@ get_randr_monitors (void)
 
         if (num_outputs) {
             for (j = 0; j < num_outputs; j++) {
-                int namelen;
-                uint8_t *str;
-                char *name;
+                int name_len = xcb_randr_get_output_info_name_length(oi_reply);
+                uint8_t *name_ptr = xcb_randr_get_output_info_name(oi_reply);
 
-                // if this output name has been allocated, skip it
-                if (!output_names[j])
-                    continue;
-
-                namelen = xcb_randr_get_output_info_name_length(oi_reply);
-                name = malloc(namelen+1);
-
-                if (!name) {
-                    fprintf(stderr, "Failed to allocate randr output name\n");
-                    exit(EXIT_FAILURE);
-                }
-
-                str = xcb_randr_get_output_info_name(oi_reply);
-                memcpy(name, str, namelen);
-                name[namelen] = '\0';
-
-                if (!memcmp(output_names[j], name, namelen)) {
-                    mons[j] = (monitor_t){ name, ci_reply->x, ci_reply->y, ci_reply->width, ci_reply->height, 0, 0, NULL, NULL };
+                if (!memcmp(output_names[j], name_ptr, name_len)) {
+                    // The monitor now owns the output name string.
+                    mons[j] = (monitor_t){ output_names[j], ci_reply->x, ci_reply->y,
+                        ci_reply->width, ci_reply->height, 0, 0, NULL, NULL };
                     output_names[j] = NULL;
                     break;
                 }
-                else
-                    free(name);
             }
-            // if this output is not in the list, skip it
+            // If this output is not in the list, skip it.
             if (j == num_outputs) {
-                mons[i].width = 0;
                 free(oi_reply);
+                free(ci_reply);
                 continue;
             }
         }
@@ -1091,9 +1075,11 @@ get_randr_monitors (void)
     }
 
     free(rres_reply);
-
-    if (num_outputs)
-        free(output_names);
+    // Every entry that's not NULL can be safely discarded.
+    for (i = 0; i < num_outputs; i++) {
+        free(output_names[i]);
+    }
+    free(output_names);
 
     // Check for clones and inactive outputs
     for (i = 0; i < num; i++) {
@@ -1118,13 +1104,15 @@ get_randr_monitors (void)
         return;
     }
 
-    monitor_t m[valid];
+    monitor_t valid_mons[valid];
 
-    for (i = j = 0; i < num && j < valid; i++)
-        if (mons[i].width != 0)
-            m[j++] = mons[i];
+    for (i = j = 0; i < num && j < valid; i++) {
+        if (mons[i].width != 0) {
+            valid_mons[j++] = mons[i];
+        }
+    }
 
-    monitor_create_chain(m, valid);
+    monitor_create_chain(valid_mons, valid);
 }
 
 #ifdef WITH_XINERAMA
@@ -1241,13 +1229,12 @@ parse_output_string(char *str)
 {
     if (!str || !*str)
         return;
-    num_outputs++;
-    output_names = realloc(output_names, num_outputs * sizeof(char *));
+    output_names = realloc(output_names, sizeof(void *) * (num_outputs + 1));
     if (!output_names) {
         fprintf(stderr, "failed to allocate output name\n");
         exit(EXIT_FAILURE);
     }
-    output_names[num_outputs-1] = str;
+    output_names[num_outputs++] = strdup(str);
 }
 
 void
