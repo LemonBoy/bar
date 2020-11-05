@@ -6,11 +6,18 @@ lemonbar - Featherweight lemon-scented bar
 
 =head1 SYNOPSIS
 
-I<lemonbar> [-h | -g I<width>B<x>I<height>B<+>I<x>B<+>I<y> | -b | -d | -f I<font> | -p | -n I<name> | -u I<pixel> | -B I<color> | -F I<color> | -U I<color>]
+I<lemonbar> [-h | -g I<width>B<x>I<height>B<+>I<x>B<+>I<y> | -o | -b | -d | -f I<font> | -p | -n I<name> | -u I<pixel> | -B I<color> | -F I<color> | -U I<color>]
 
 =head1 DESCRIPTION
 
-B<lemonbar> (formerly known as B<bar>) is a lightweight bar entirely based on XCB. Provides full UTF-8 support, basic formatting, RandR and Xinerama support and EWMH compliance without wasting your precious memory.
+B<lemonbar> (formerly known as B<bar>) is a lightweight statusbar based on XCB.
+Provides full UTF-8 support, basic formatting, RandR and Xinerama support and
+EWMH compliance without wasting your precious memory.
+
+=head1 INPUT
+
+The data to be parsed is read from the standard input, parsing and printing the
+input data are delayed until a newline is found.
 
 =head1 OPTIONS
 
