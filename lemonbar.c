@@ -493,6 +493,18 @@ select_drawable_font (const uint16_t c)
     return NULL;
 }
 
+int
+pos_to_absolute(monitor_t *mon, int pos, int align)
+{
+    switch (align) {
+        case ALIGN_L: return pos;
+        case ALIGN_R: return mon->width - pos;
+        case ALIGN_C: return mon->width / 2 + pos / 2;
+    }
+
+    return 0;
+}
+
 void
 parse (char *text)
 {
@@ -500,7 +512,6 @@ parse (char *text)
     monitor_t *cur_mon;
     int pos_x, align, button;
     char *p = text, *block_end, *ep;
-    rgba_t tmp;
 
     pos_x = 0;
     align = ALIGN_L;
@@ -532,79 +543,115 @@ parse (char *text)
                     p++;
 
                 switch (*p++) {
+                    // Enable/disable attributes.
                     case '+': set_attribute('+', *p++); break;
                     case '-': set_attribute('-', *p++); break;
                     case '!': set_attribute('!', *p++); break;
 
-                    case 'R':
-                              tmp = fgc;
-                              fgc = bgc;
-                              bgc = tmp;
-                              update_gc();
-                              break;
+                    // Reverse foreground/background color.
+                    case 'R': {
+                        rgba_t tmp = fgc;
+                        fgc = bgc;
+                        bgc = tmp;
+                        update_gc();
+                    } break;
 
-                    case 'l': pos_x = 0; align = ALIGN_L; break;
-                    case 'c': pos_x = 0; align = ALIGN_C; break;
-                    case 'r': pos_x = 0; align = ALIGN_R; break;
+                    // Alignment specifiers.
+                    // Keep track of where we are and where we're moving to so
+                    // that underlines/overlines are correctly drawn over the
+                    // empty space.
+                    case 'l': {
+                        int left_ep = 0;
+                        int right_ep = pos_to_absolute(cur_mon, pos_x, align);
+                        draw_lines(cur_mon, left_ep, right_ep - left_ep);
+                        pos_x = 0; align = ALIGN_L;
+                    } break;
+                    case 'c': {
+                        int left_ep = pos_to_absolute(cur_mon, pos_x, align);
+                        int right_ep = cur_mon->width / 2;
+                        if (right_ep < left_ep) {
+                            int tmp = left_ep;
+                            left_ep = right_ep;
+                            right_ep = tmp;
+                        }
+                        draw_lines(cur_mon, left_ep, right_ep - left_ep);
+                        pos_x = 0; align = ALIGN_C;
+                    } break;
+                    case 'r': {
+                        int left_ep = pos_to_absolute(cur_mon, pos_x, align);
+                        int right_ep = cur_mon->width;
+                        if (right_ep < left_ep) {
+                            int tmp = left_ep;
+                            left_ep = right_ep;
+                            right_ep = tmp;
+                        }
+                        draw_lines(cur_mon, left_ep, right_ep - left_ep);
+                        pos_x = 0; align = ALIGN_R;
+                    } break;
 
-                    case 'A':
-                              button = XCB_BUTTON_INDEX_1;
-                              // The range is 1-5
-                              if (isdigit(*p) && (*p > '0' && *p < '6'))
-                                  button = *p++ - '0';
-                              if (!area_add(p, block_end, &p, cur_mon, pos_x, align, button))
-                                  return;
-                              break;
+                    // Define input area.
+                    case 'A': {
+                        button = XCB_BUTTON_INDEX_1;
+                        // The range is 1-5
+                        if (isdigit(*p) && (*p > '0' && *p < '6'))
+                            button = *p++ - '0';
+                        if (!area_add(p, block_end, &p, cur_mon, pos_x, align, button))
+                            return;
+                    } break;
 
+                    // Set background/foreground/underline color.
                     case 'B': bgc = parse_color(p, &p, dbgc); update_gc(); break;
                     case 'F': fgc = parse_color(p, &p, dfgc); update_gc(); break;
                     case 'U': ugc = parse_color(p, &p, dugc); update_gc(); break;
 
-                    case 'S':
-                              if (*p == '+' && cur_mon->next)
-                              { cur_mon = cur_mon->next; }
-                              else if (*p == '-' && cur_mon->prev)
-                              { cur_mon = cur_mon->prev; }
-                              else if (*p == 'f')
-                              { cur_mon = monhead; }
-                              else if (*p == 'l')
-                              { cur_mon = montail ? montail : monhead; }
-                              else if (*p == 'n')
-                              { cur_mon = monhead;
-                                while (cur_mon->next) {
-                                    if (cur_mon->name && !strncmp(cur_mon->name, p+1, (block_end-p)-1))
-                                        break;
-                                    cur_mon = cur_mon->next;
-                                }
-                              }
-                              else if (isdigit(*p))
-                              { cur_mon = monhead;
-                                for (int i = 0; i != *p-'0' && cur_mon->next; i++)
-                                    cur_mon = cur_mon->next;
-                              }
-                              else
-                              { p++; continue; }
+                    // Set current monitor used for drawing.
+                    case 'S': {
+                        if (*p == '+' && cur_mon->next)
+                        { cur_mon = cur_mon->next; }
+                        else if (*p == '-' && cur_mon->prev)
+                        { cur_mon = cur_mon->prev; }
+                        else if (*p == 'f')
+                        { cur_mon = monhead; }
+                        else if (*p == 'l')
+                        { cur_mon = montail ? montail : monhead; }
+                        else if (*p == 'n')
+                        { cur_mon = monhead;
+                            while (cur_mon->next) {
+                                if (cur_mon->name && !strncmp(cur_mon->name, p+1, (block_end-p)-1))
+                                    break;
+                                cur_mon = cur_mon->next;
+                            }
+                        }
+                        else if (isdigit(*p))
+                        { cur_mon = monhead;
+                            for (int i = 0; i != *p-'0' && cur_mon->next; i++)
+                                cur_mon = cur_mon->next;
+                        }
+                        else
+                        { p++; continue; }
 
-                              p++;
-                              pos_x = 0;
-                              break;
-                    case 'O':
-                              errno = 0;
-                              w = (int) strtoul(p, &p, 10);
-                              if (errno)
-                                  continue;
+                        p++;
+                        pos_x = 0;
+                    } break;
 
-                              draw_shift(cur_mon, pos_x, align, w);
+                    // Draw a N-pixel wide empty character.
+                    case 'O': {
+                        errno = 0;
+                        w = (int) strtoul(p, &p, 10);
+                        if (errno)
+                            continue;
 
-                              pos_x += w;
-                              area_shift(cur_mon->window, align, w);
-                              break;
+                        draw_shift(cur_mon, pos_x, align, w);
 
-                    case 'T':
-                              if (*p == '-') { //Reset to automatic font selection
+                        pos_x += w;
+                        area_shift(cur_mon->window, align, w);
+                    } break;
+
+                    case 'T': {
+                              if (*p == '-') {
+                                  // Switch to automatic font selection.
                                   font_index = -1;
                                   p++;
-                                  break;
                               } else if (isdigit(*p)) {
                                   font_index = (int)strtoul(p, &ep, 10);
                                   // User-specified 'font_index' ∊ (0,font_count]
@@ -612,11 +659,12 @@ parse (char *text)
                                   if (!font_index || font_index > font_count)
                                   font_index = -1;
                                   p = ep;
-                                  break;
                               } else {
-                                  fprintf(stderr, "Invalid font slot \"%c\"\n", *p++); //Swallow the token
-                                  break;
+                                  // Swallow the invalid character and keep
+                                  // parsing.
+                                  fprintf(stderr, "Invalid font slot \"%c\"\n", *p++);
                               }
+                    } break;
 
                     // In case of error keep parsing after the closing }
                     default:
