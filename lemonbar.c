@@ -506,6 +506,12 @@ parse (char *text)
     align = ALIGN_L;
     cur_mon = monhead;
 
+    // Reset the default color set
+    bgc = dbgc;
+    fgc = dfgc;
+    ugc = fgc;
+    update_gc();
+
     // Reset the stack position
     area_stack.at = 0;
 
