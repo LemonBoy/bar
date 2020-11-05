@@ -1312,6 +1312,7 @@ cleanup (void)
         monitor_t *next = monhead->next;
         xcb_destroy_window(c, monhead->window);
         xcb_free_pixmap(c, monhead->pixmap);
+        free(monhead->name);
         free(monhead);
         monhead = next;
     }
