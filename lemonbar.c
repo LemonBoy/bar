@@ -101,6 +101,9 @@ static rgba_t fgc, bgc, ugc;
 static rgba_t dfgc, dbgc, dugc;
 static area_stack_t area_stack;
 
+static const rgba_t BLACK = (rgba_t){ .r = 0, .g = 0, .b = 0, .a = 255 };
+static const rgba_t WHITE = (rgba_t){ .r = 255, .g = 255, .b = 255, .a = 255 };
+
 void
 update_gc (void)
 {
@@ -1278,8 +1281,8 @@ main (int argc, char **argv)
     signal(SIGTERM, sighandle);
 
     // B/W combo
-    dbgc = bgc = (rgba_t)0x00000000U;
-    dfgc = fgc = (rgba_t)0xffffffffU;
+    dbgc = bgc = BLACK;
+    dfgc = fgc = WHITE;
     dugc = ugc = fgc;
 
     // A safe default
@@ -1313,8 +1316,8 @@ main (int argc, char **argv)
             case 'd': dock = true; break;
             case 'f': font_load(optarg); break;
             case 'u': bu = strtoul(optarg, NULL, 10); break;
-            case 'B': dbgc = bgc = parse_color(optarg, NULL, (rgba_t)0x00000000U); break;
-            case 'F': dfgc = fgc = parse_color(optarg, NULL, (rgba_t)0xffffffffU); break;
+            case 'B': dbgc = bgc = parse_color(optarg, NULL, BLACK); break;
+            case 'F': dfgc = fgc = parse_color(optarg, NULL, WHITE); break;
             case 'U': dugc = ugc = parse_color(optarg, NULL, fgc); break;
             case 'a': areas = strtoul(optarg, NULL, 10); break;
         }
