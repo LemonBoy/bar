@@ -511,6 +511,8 @@ parse (char *text)
     fgc = dfgc;
     ugc = fgc;
     update_gc();
+    // Reset the default attributes
+    attrs = 0;
 
     // Reset the stack position
     area_stack.at = 0;
