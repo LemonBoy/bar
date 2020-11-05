@@ -536,7 +536,6 @@ parse (char *text)
         if (p[0] == '%' && p[1] == '{' && (block_end = strchr(p++, '}'))) {
             p++;
             while (p < block_end) {
-                int w;
                 while (isspace(*p))
                     p++;
 
@@ -604,38 +603,57 @@ parse (char *text)
 
                     // Set current monitor used for drawing.
                     case 'S': {
-                        if (*p == '+' && cur_mon->next)
-                        { cur_mon = cur_mon->next; }
-                        else if (*p == '-' && cur_mon->prev)
-                        { cur_mon = cur_mon->prev; }
-                        else if (*p == 'f')
-                        { cur_mon = monhead; }
-                        else if (*p == 'l')
-                        { cur_mon = montail ? montail : monhead; }
-                        else if (*p == 'n')
-                        { cur_mon = monhead;
-                            while (cur_mon->next) {
-                                if (cur_mon->name && !strncmp(cur_mon->name, p+1, (block_end-p)-1))
-                                    break;
-                                cur_mon = cur_mon->next;
-                            }
-                        }
-                        else if (isdigit(*p))
-                        { cur_mon = monhead;
-                            for (int i = 0; i != *p-'0' && cur_mon->next; i++)
-                                cur_mon = cur_mon->next;
-                        }
-                        else
-                        { p++; continue; }
+                        monitor_t *orig_mon = cur_mon;
 
-                        p++;
-                        pos_x = 0;
+                        switch (*p) {
+                            case '+': // Next monitor.
+                                if (cur_mon->next) cur_mon = cur_mon->next;
+                                p += 1;
+                                break;
+                            case '-': // Previous monitor.
+                                if (cur_mon->prev) cur_mon = cur_mon->prev;
+                                p += 1;
+                                break;
+                            case 'f': // First monitor.
+                                cur_mon = monhead;
+                                p += 1;
+                                break;
+                            case 'l': // Last monitor.
+                                cur_mon = montail ? montail : monhead;
+                                p += 1;
+                                break;
+                            case 'n': { // Named monitor.
+                                const size_t name_len = block_end - (p + 1);
+                                cur_mon = monhead;
+                                while (cur_mon->next) {
+                                    if (cur_mon->name &&
+                                            !strncmp(cur_mon->name, p + 1, name_len))
+                                        break;
+                                    cur_mon = cur_mon->next;
+                                }
+                                p += 1 + name_len;
+                            } break;
+                            case '0' ... '9': // Numbered monitor.
+                                cur_mon = monhead;
+                                for (int i = 0; i != *p-'0' && cur_mon->next; i++)
+                                    cur_mon = cur_mon->next;
+                                p += 1;
+                                break;
+                            default:
+                                fprintf(stderr, "Unknown S specifier '%c'\n", *p++);
+                                break;
+                        }
+
+                        if (orig_mon != cur_mon) {
+                            pos_x = 0;
+                            align = ALIGN_L;
+                        }
                     } break;
 
                     // Draw a N-pixel wide empty character.
                     case 'O': {
                         errno = 0;
-                        w = (int) strtoul(p, &p, 10);
+                        int w = (int) strtoul(p, &p, 10);
                         if (errno)
                             continue;
 
@@ -646,24 +664,23 @@ parse (char *text)
                     } break;
 
                     case 'T': {
-                              if (*p == '-') {
-                                  // Switch to automatic font selection.
+                          if (*p == '-') {
+                              // Switch to automatic font selection.
+                              font_index = -1;
+                              p++;
+                          } else if (isdigit(*p)) {
+                              font_index = (int)strtoul(p, &ep, 10);
+                              // User-specified 'font_index' ∊ (0,font_count]
+                              // Otherwise just fallback to the automatic font selection
+                              if (!font_index || font_index > font_count) {
+                                  fprintf(stderr, "Invalid font index %d\n", font_index);
                                   font_index = -1;
-                                  p++;
-                              } else if (isdigit(*p)) {
-                                  font_index = (int)strtoul(p, &ep, 10);
-                                  // User-specified 'font_index' ∊ (0,font_count]
-                                  // Otherwise just fallback to the automatic font selection
-                                  if (!font_index || font_index > font_count) {
-                                      fprintf(stderr, "Invalid font index %d\n", font_index);
-                                      font_index = -1;
-                                  }
-                                  p = ep;
-                              } else {
-                                  // Swallow the invalid character and keep
-                                  // parsing.
-                                  fprintf(stderr, "Invalid font slot \"%c\"\n", *p++);
                               }
+                              p = ep;
+                          } else {
+                              // Swallow the invalid character and keep parsing.
+                              fprintf(stderr, "Invalid font slot \"%c\"\n", *p++);
+                          }
                     } break;
 
                     // In case of error keep parsing after the closing }
