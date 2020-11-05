@@ -10,6 +10,7 @@
 #include <getopt.h>
 #include <unistd.h>
 #include <errno.h>
+#include <assert.h>
 #include <xcb/xcb.h>
 #include <xcb/xcbext.h>
 #if WITH_XINERAMA
@@ -1347,6 +1348,7 @@ main (int argc, char **argv)
     xcb_expose_event_t *expose_ev;
     xcb_button_press_event_t *press_ev;
     char input[4096] = {0, };
+    size_t input_offset = 0;
     bool permanent = false;
     int geom_v[4] = { -1, -1, 0, 0 };
     int ch, areas;
@@ -1443,11 +1445,44 @@ main (int argc, char **argv)
                 else break;                         // ...bail out
             }
             if (pollin[0].revents & POLLIN) { // New input, process it
-                if (fgets(input, sizeof(input), stdin) == NULL)
-                    break; // EOF received
+                while (true) {
+                    ssize_t r = read(STDIN_FILENO, input + input_offset,
+                            sizeof(input) - input_offset);
+                    if (r == 0) break;
+                    if (r < 0) {
+                        if (errno == EINTR) continue;
+                        exit(EXIT_FAILURE);
+                    }
 
-                parse(input);
-                redraw = true;
+                    input_offset += r;
+
+                    // Try to find the last complete input line in the buffer.
+                    char *input_end = input + input_offset;
+                    char *last_nl = memrchr(input, '\n', input_end - input);
+
+                    if (last_nl) {
+                        char *prev_nl = (last_nl != input) ?
+                                memrchr(input, '\n', last_nl - 1 - input) : NULL;
+                        char *begin = prev_nl? prev_nl + 1: input;
+
+                        *last_nl = '\0';
+
+                        parse(begin);
+                        redraw = true;
+
+                        // Move the unparsed part back to the beginning.
+                        memmove(input, last_nl + 1, input_end - (last_nl + 1));
+                        input_offset = input_end - (last_nl + 1);
+
+                        break;
+                    }
+
+                    // The input buffer is full and we haven't seen a newline
+                    // yet, discard everything and start from zero.
+                    if (sizeof(input) == input_offset) {
+                        input_offset = 0;
+                    }
+                }
             }
             if (pollin[1].revents & POLLIN) { // The event comes from the Xorg server
                 while ((ev = xcb_poll_for_event(c))) {
