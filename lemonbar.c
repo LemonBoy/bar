@@ -83,15 +83,13 @@ enum {
     GC_MAX
 };
 
-#define MAX_FONT_COUNT 5
-
 static xcb_connection_t *c;
 static xcb_screen_t *scr;
 static xcb_gcontext_t gc[GC_MAX];
 static xcb_visualid_t visual;
 static xcb_colormap_t colormap;
 static monitor_t *monhead, *montail;
-static font_t *font_list[MAX_FONT_COUNT];
+static font_t **font_list = NULL;
 static int font_count = 0;
 static int font_index = -1;
 static uint32_t attrs = 0;
@@ -656,8 +654,10 @@ parse (char *text)
                                   font_index = (int)strtoul(p, &ep, 10);
                                   // User-specified 'font_index' ∊ (0,font_count]
                                   // Otherwise just fallback to the automatic font selection
-                                  if (!font_index || font_index > font_count)
-                                  font_index = -1;
+                                  if (!font_index || font_index > font_count) {
+                                      fprintf(stderr, "Invalid font index %d\n", font_index);
+                                      font_index = -1;
+                                  }
                                   p = ep;
                               } else {
                                   // Swallow the invalid character and keep
@@ -734,11 +734,6 @@ parse (char *text)
 void
 font_load (const char *pattern)
 {
-    if (font_count >= MAX_FONT_COUNT) {
-        fprintf(stderr, "Max font count reached. Could not load font \"%s\"\n", pattern);
-        return;
-    }
-
     xcb_query_font_cookie_t queryreq;
     xcb_query_font_reply_t *font_info;
     xcb_void_cookie_t cookie;
@@ -753,9 +748,10 @@ font_load (const char *pattern)
     }
 
     font_t *ret = calloc(1, sizeof(font_t));
-
-    if (!ret)
-        return;
+    if (!ret) {
+        fprintf(stderr, "Failed to allocate new font descriptor\n");
+        exit(EXIT_FAILURE);
+    }
 
     queryreq = xcb_query_font(c, font);
     font_info = xcb_query_font_reply(c, queryreq, NULL);
@@ -776,6 +772,11 @@ font_load (const char *pattern)
 
     free(font_info);
 
+    font_list = realloc(font_list, sizeof(font_t) * (font_count + 1));
+    if (!font_list) {
+        fprintf(stderr, "Failed to allocate %d font descriptors", font_count + 1);
+        exit(EXIT_FAILURE);
+    }
     font_list[font_count++] = ret;
 }
 
@@ -1253,7 +1254,7 @@ void
 init (char *wm_name)
 {
     // Try to load a default font
-    if (!font_count)
+    if (font_count == 0)
         font_load("fixed");
 
     // We tried and failed hard, there's something wrong
@@ -1364,6 +1365,7 @@ cleanup (void)
         free(font_list[i]->width_lut);
         free(font_list[i]);
     }
+    free(font_list);
 
     while (monhead) {
         monitor_t *next = monhead->next;
