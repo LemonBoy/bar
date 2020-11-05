@@ -1546,8 +1546,9 @@ main (int argc, char **argv)
                         redraw = true;
 
                         // Move the unparsed part back to the beginning.
-                        memmove(input, last_nl + 1, input_end - (last_nl + 1));
-                        input_offset = input_end - (last_nl + 1);
+                        const size_t remaining = input_end - (last_nl + 1);
+                        if (remaining != 0) memmove(input, last_nl + 1, remaining);
+                        input_offset = remaining;
 
                         break;
                     }
