@@ -970,7 +970,7 @@ monitor_create_chain (monitor_t *mons, const int num)
                     mons[i].y,
                     min(width, mons[i].width - left),
                     mons[i].height,
-                    mons[i].name);
+                    mons[i].name? strdup(mons[i].name) : NULL);
 
             if (!mon)
                 break;
@@ -1015,10 +1015,13 @@ get_randr_monitors (void)
         return;
     }
 
-    monitor_t mons[num];
     // Every entry starts with a size of 0, making it invalid until we fill in
     // the data retrieved from the Xserver.
-    memset(mons, 0, sizeof(mons));
+    monitor_t *mons = calloc(max(num, num_outputs), sizeof(monitor_t));
+    if (!mons) {
+        fprintf(stderr, "failed to allocate the monitor array\n");
+        return;
+    }
 
     // Get all outputs
     for (i = 0; i < num; i++) {
@@ -1037,49 +1040,52 @@ get_randr_monitors (void)
                 xcb_randr_get_crtc_info(c, oi_reply->crtc, XCB_CURRENT_TIME), NULL);
 
         if (!ci_reply) {
-            fprintf(stderr, "Failed to get RandR ctrc info\n");
+            fprintf(stderr, "Failed to get RandR crtc info\n");
             free(rres_reply);
-            return;
+            goto cleanup_mons;
         }
 
-        if (num_outputs) {
-            for (j = 0; j < num_outputs; j++) {
-                int name_len = xcb_randr_get_output_info_name_length(oi_reply);
-                uint8_t *name_ptr = xcb_randr_get_output_info_name(oi_reply);
+        int name_len = xcb_randr_get_output_info_name_length(oi_reply);
+        uint8_t *name_ptr = xcb_randr_get_output_info_name(oi_reply);
 
-                if (!memcmp(output_names[j], name_ptr, name_len)) {
-                    // The monitor now owns the output name string.
-                    mons[j] = (monitor_t){ output_names[j], ci_reply->x, ci_reply->y,
-                        ci_reply->width, ci_reply->height, 0, 0, NULL, NULL };
-                    output_names[j] = NULL;
+        bool is_valid = true;
+
+        if (num_outputs) {
+            // Skip outputs missing from the list.
+            is_valid = false;
+            // Allocate monitors following the specified order.
+            for (j = 0; j < num_outputs; j++) {
+                // Already allocated, the list contains a duplicate.
+                if (mons[j].name)
+                    break;
+
+                if (!memcmp(output_names[j], name_ptr, name_len) &&
+                        strlen(output_names[j]) == name_len) {
+                    is_valid = true;
                     break;
                 }
             }
-            // If this output is not in the list, skip it.
-            if (j == num_outputs) {
-                free(oi_reply);
-                free(ci_reply);
-                continue;
-            }
-        }
-        else {
-            // There's no need to handle rotated screens here (see #69)
-            mons[i] = (monitor_t){ NULL, ci_reply->x, ci_reply->y, ci_reply->width, ci_reply->height, 0, 0, NULL, NULL };
         }
 
+        if (is_valid) {
+            char *alloc_name = calloc(name_len + 1, 1);
+            if (!alloc_name) {
+                fprintf(stderr, "failed to allocate output name\n");
+                exit(EXIT_FAILURE);
+            }
+            memcpy(alloc_name, name_ptr, name_len);
+
+            // There's no need to handle rotated screens here (see #69)
+            mons[i] = (monitor_t){ alloc_name, ci_reply->x, ci_reply->y,
+                ci_reply->width, ci_reply->height, 0, 0, NULL, NULL };
+            valid += 1;
+        }
 
         free(oi_reply);
         free(ci_reply);
-
-        valid++;
     }
 
     free(rres_reply);
-    // Every entry that's not NULL can be safely discarded.
-    for (i = 0; i < num_outputs; i++) {
-        free(output_names[i]);
-    }
-    free(output_names);
 
     // Check for clones and inactive outputs
     for (i = 0; i < num; i++) {
@@ -1099,20 +1105,24 @@ get_randr_monitors (void)
         }
     }
 
-    if (valid < 1) {
-        fprintf(stderr, "No usable RandR output found\n");
-        return;
-    }
-
-    monitor_t valid_mons[valid];
-
-    for (i = j = 0; i < num && j < valid; i++) {
-        if (mons[i].width != 0) {
-            valid_mons[j++] = mons[i];
+    if (valid > 0) {
+        monitor_t valid_mons[valid];
+        for (i = j = 0; i < num && j < valid; i++) {
+            if (mons[i].width != 0) {
+                valid_mons[j++] = mons[i];
+            }
         }
+
+        monitor_create_chain(valid_mons, valid);
+    } else {
+        fprintf(stderr, "No usable RandR output found\n");
     }
 
-    monitor_create_chain(valid_mons, valid);
+cleanup_mons:
+    for (i = 0; i < num; i++) {
+        free(mons[i].name);
+    }
+    free(mons);
 }
 
 #ifdef WITH_XINERAMA
@@ -1306,11 +1316,12 @@ init (char *wm_name)
     }
 #endif
 
+    if (!monhead && num_outputs != 0) {
+        fprintf(stderr, "Failed to find any specified outputs\n");
+        exit(EXIT_FAILURE);
+    }
+
     if (!monhead) {
-        if (num_outputs) {
-            fprintf(stderr, "Failed to find any specified outputs\n");
-            exit(EXIT_FAILURE);
-        }
         // If I fits I sits
         if (bw < 0)
             bw = scr->width_in_pixels - bx;
@@ -1365,6 +1376,11 @@ init (char *wm_name)
 void
 cleanup (void)
 {
+    for (int i = 0; i < num_outputs; i++) {
+        free(output_names[i]);
+    }
+    free(output_names);
+
     free(area_stack.ptr);
 
     for (int i = 0; i < font_count; i++) {
