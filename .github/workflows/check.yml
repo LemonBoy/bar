@@ -1,4 +1,4 @@
-name: C/C++ CI
+name: Does this build look infected?
 
 on:
   push:
@@ -16,6 +16,6 @@ jobs:
     - name: Download dependencies
       run: sudo apt-get install -y libx11-xcb-dev libxcb-randr0-dev libxcb-xinerama0-dev
     - name: Build
-      run: make CFLAGS='-DWITH_XINERAMA=1'
+      run: CFLAGS='-DWITH_XINERAMA=1' make
     - name: Check
       run: ./lemonbar -h
