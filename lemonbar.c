@@ -521,7 +521,7 @@ parse (char *text)
     // Reset the default color set
     bgc = dbgc;
     fgc = dfgc;
-    ugc = fgc;
+    ugc = dugc;
     update_gc();
     // Reset the default attributes
     attrs = 0;
