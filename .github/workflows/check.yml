@@ -14,7 +14,9 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Download dependencies
-      run: sudo apt-get install -y libx11-xcb-dev libxcb-randr0-dev libxcb-xinerama0-dev
+      run: |
+        sudo apt update -y
+        sudo apt install -y libx11-xcb-dev libxcb-randr0-dev libxcb-xinerama0-dev
     - name: Build
       run: CFLAGS='-DWITH_XINERAMA=1' make
     - name: Check
