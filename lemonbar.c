@@ -17,12 +17,12 @@
 #include <xcb/xinerama.h>
 #endif
 #include <xcb/randr.h>
+#include "utils.h"
 
 // Here be dragons
 
 #define max(a,b) ((a) > (b) ? (a) : (b))
 #define min(a,b) ((a) < (b) ? (a) : (b))
-#define indexof(c,s) (strchr((s),(c))-(s))
 
 typedef struct font_t {
     xcb_font_t ptr;
@@ -113,34 +113,6 @@ update_gc (void)
     xcb_change_gc(c, gc[GC_DRAW], XCB_GC_FOREGROUND, (const uint32_t []){ fgc.v });
     xcb_change_gc(c, gc[GC_CLEAR], XCB_GC_FOREGROUND, (const uint32_t []){ bgc.v });
     xcb_change_gc(c, gc[GC_ATTR], XCB_GC_FOREGROUND, (const uint32_t []){ ugc.v });
-}
-
-void
-fill_gradient (xcb_drawable_t d, int x, int y, int width, int height, rgba_t start, rgba_t stop)
-{
-    float i;
-    const int K = 25; // The number of steps
-
-    for (i = 0.; i < 1.; i += (1. / K)) {
-        // Perform the linear interpolation magic
-        unsigned int rr = i * stop.r + (1. - i) * start.r;
-        unsigned int gg = i * stop.g + (1. - i) * start.g;
-        unsigned int bb = i * stop.b + (1. - i) * start.b;
-
-        // The alpha is ignored here
-        rgba_t step = {
-            .r = rr,
-            .g = gg,
-            .b = bb,
-            .a = 255,
-        };
-
-        xcb_change_gc(c, gc[GC_DRAW], XCB_GC_FOREGROUND, (const uint32_t []){ step.v });
-        xcb_poly_fill_rectangle(c, d, gc[GC_DRAW], 1,
-                               (const xcb_rectangle_t []){ { x, i * bh, width, bh / K + 1 } });
-    }
-
-    xcb_change_gc(c, gc[GC_DRAW], XCB_GC_FOREGROUND, (const uint32_t []){ fgc.v });
 }
 
 void
@@ -334,17 +306,20 @@ parse_color (const char *str, char **end, const rgba_t def)
 void
 set_attribute (const char modifier, const char attribute)
 {
-    int pos = indexof(attribute, "ou");
+    uint32_t mask;
 
-    if (pos < 0) {
-        fprintf(stderr, "Invalid attribute \"%c\" found\n", attribute);
-        return;
+    switch (attribute) {
+        case 'o': mask = ATTR_OVERL;  break;
+        case 'u': mask = ATTR_UNDERL; break;
+        default:
+            fprintf(stderr, "Invalid attribute \"%c\" found\n", attribute);
+            return;
     }
 
     switch (modifier) {
-        case '+': attrs |= (1<<pos); break;
-        case '-': attrs &=~(1<<pos); break;
-        case '!': attrs ^= (1<<pos); break;
+        case '+': attrs |=  mask; break;
+        case '-': attrs &= ~mask; break;
+        case '!': attrs ^=  mask; break;
     }
 }
 
@@ -422,11 +397,8 @@ area_add (char *str, const char *optend, char **end, monitor_t *mon, const int x
     }
 
     if (area_stack.index + 1 > area_stack.alloc) {
-        area_stack.ptr = realloc(area_stack.ptr, sizeof(area_t) * (area_stack.index + 1));
-        if (!area_stack.ptr) {
-            fprintf(stderr, "Failed to allocate new input areas\n");
-            exit(EXIT_FAILURE);
-        }
+        area_stack.ptr = xreallocarray(area_stack.ptr, area_stack.index + 1,
+                sizeof(area_t));
         area_stack.alloc += 1;
     }
     a = &area_stack.ptr[area_stack.index++];
@@ -767,11 +739,7 @@ font_load (const char *pattern)
         return;
     }
 
-    font_t *ret = calloc(1, sizeof(font_t));
-    if (!ret) {
-        fprintf(stderr, "Failed to allocate new font descriptor\n");
-        exit(EXIT_FAILURE);
-    }
+    font_t *ret = xcalloc(1, sizeof(font_t));
 
     queryreq = xcb_query_font(c, font);
     font_info = xcb_query_font_reply(c, queryreq, NULL);
@@ -784,15 +752,16 @@ font_load (const char *pattern)
     ret->char_min = font_info->min_byte1 << 8 | font_info->min_char_or_byte2;
 
     // Copy over the width lut as it's part of font_info
-    int lut_size = sizeof(xcb_charinfo_t) * xcb_query_font_char_infos_length(font_info);
+    size_t lut_size = sizeof(xcb_charinfo_t) *
+            xcb_query_font_char_infos_length(font_info);
     if (lut_size) {
-        ret->width_lut = malloc(lut_size);
+        ret->width_lut = xmalloc(lut_size);
         memcpy(ret->width_lut, xcb_query_font_char_infos(font_info), lut_size);
     }
 
     free(font_info);
 
-    font_list = realloc(font_list, sizeof(font_t) * (font_count + 1));
+    font_list = xreallocarray(font_list, font_count + 1, sizeof(font_t));
     if (!font_list) {
         fprintf(stderr, "Failed to allocate %d font descriptors", font_count + 1);
         exit(EXIT_FAILURE);
@@ -871,12 +840,7 @@ monitor_new (int x, int y, int width, int height, char *name)
 {
     monitor_t *ret;
 
-    ret = calloc(1, sizeof(monitor_t));
-    if (!ret) {
-        fprintf(stderr, "Failed to allocate new monitor\n");
-        exit(EXIT_FAILURE);
-    }
-
+    ret = xcalloc(1, sizeof(monitor_t));
     ret->name = name;
     ret->x = x;
     ret->y = (topbar ? by : height - bh - by) + y;
@@ -971,7 +935,7 @@ monitor_create_chain (monitor_t *mons, const int num)
                     mons[i].y,
                     min(width, mons[i].width - left),
                     mons[i].height,
-                    mons[i].name? strdup(mons[i].name) : NULL);
+                    mons[i].name? xstrdup(mons[i].name) : NULL);
 
             if (!mon)
                 break;
@@ -1018,11 +982,7 @@ get_randr_monitors (void)
 
     // Every entry starts with a size of 0, making it invalid until we fill in
     // the data retrieved from the Xserver.
-    monitor_t *mons = calloc(max(num, num_outputs), sizeof(monitor_t));
-    if (!mons) {
-        fprintf(stderr, "failed to allocate the monitor array\n");
-        return;
-    }
+    monitor_t *mons = xcalloc(max(num, num_outputs), sizeof(monitor_t));
 
     // Get all outputs
     for (i = 0; i < num; i++) {
@@ -1069,11 +1029,7 @@ get_randr_monitors (void)
         }
 
         if (is_valid) {
-            char *alloc_name = calloc(name_len + 1, 1);
-            if (!alloc_name) {
-                fprintf(stderr, "failed to allocate output name\n");
-                exit(EXIT_FAILURE);
-            }
+            char *alloc_name = xcalloc(name_len + 1, 1);
             memcpy(alloc_name, name_ptr, name_len);
 
             // There's no need to handle rotated screens here (see #69)
@@ -1240,12 +1196,12 @@ parse_output_string(char *str)
 {
     if (!str || !*str)
         return;
-    output_names = realloc(output_names, sizeof(void *) * (num_outputs + 1));
+    output_names = xreallocarray(output_names, num_outputs + 1, sizeof(void*));
     if (!output_names) {
         fprintf(stderr, "failed to allocate output name\n");
         exit(EXIT_FAILURE);
     }
-    output_names[num_outputs++] = strdup(str);
+    output_names[num_outputs++] = xstrdup(str);
 }
 
 void
@@ -1472,7 +1428,7 @@ main (int argc, char **argv)
             case 'g': (void)parse_geometry_string(optarg, geom_v); break;
             case 'o': (void)parse_output_string(optarg); break;
             case 'p': permanent = true; break;
-            case 'n': wm_name = strdup(optarg); break;
+            case 'n': wm_name = xstrdup(optarg); break;
             case 'b': topbar = false; break;
             case 'd': dock = true; break;
             case 'f': font_load(optarg); break;
@@ -1486,11 +1442,7 @@ main (int argc, char **argv)
     // Initialize the stack holding the clickable areas
     area_stack.index = 0;
     area_stack.alloc = 10;
-    area_stack.ptr = calloc(10, sizeof(area_t));
-    if (!area_stack.ptr) {
-        fprintf(stderr, "Failed to allocate enough input areas\n");
-        return EXIT_FAILURE;
-    }
+    area_stack.ptr = xcalloc(10, sizeof(area_t));
 
     // Copy the geometry values in place
     bw = geom_v[0];
