@@ -1456,6 +1456,12 @@ main (int argc, char **argv)
     // Get the fd to Xserver
     pollin[1].fd = xcb_get_file_descriptor(c);
 
+#ifdef __OpenBSD__
+    if (pledge("stdio rpath", NULL) < 0) {
+        err(EXIT_FAILURE, "pledge failed");
+    }
+#endif
+
     for (;;) {
         bool redraw = false;
 
