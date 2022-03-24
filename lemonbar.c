@@ -1195,11 +1195,7 @@ parse_output_string(char *str)
 {
     if (!str || !*str)
         return;
-    output_names = xreallocarray(output_names, num_outputs + 1, sizeof(void*));
-    if (!output_names) {
-        fprintf(stderr, "failed to allocate output name\n");
-        exit(EXIT_FAILURE);
-    }
+    output_names = xreallocarray(output_names, num_outputs + 1, sizeof(char*));
     output_names[num_outputs++] = xstrdup(str);
 }
 
