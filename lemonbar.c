@@ -599,12 +599,14 @@ parse (char *text)
                             case 'n': { // Named monitor.
                                 const size_t name_len = block_end - (p + 1);
                                 cur_mon = monhead;
-                                while (cur_mon->next) {
+                                while (cur_mon) {
                                     if (cur_mon->name &&
-                                            !strncmp(cur_mon->name, p + 1, name_len))
+                                            !strncmp(cur_mon->name, p + 1, name_len) &&
+                                            cur_mon->name[name_len] == '\0')
                                         break;
                                     cur_mon = cur_mon->next;
                                 }
+                                if (!cur_mon) cur_mon = orig_mon;
                                 p += 1 + name_len;
                             } break;
                             case '0' ... '9': // Numbered monitor.
