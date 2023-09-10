@@ -844,6 +844,7 @@ monitor_new (int x, int y, int width, int height, char *name)
     ret->x = x;
     ret->y = (topbar ? by : height - bh - by) + y;
     ret->width = width;
+    ret->height = height;
     ret->next = ret->prev = NULL;
     ret->window = xcb_generate_id(c);
 
