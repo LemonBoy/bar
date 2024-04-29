@@ -1054,7 +1054,7 @@ get_randr_monitors (void)
         for (j = 0; j < num; j++) {
             // Does I contain J ?
 
-            if (i != j && mons[j].width && !mons[j].name) {
+            if (i != j && mons[j].width) {
                 if (mons[j].x >= mons[i].x && mons[j].x + mons[j].width <= mons[i].x + mons[i].width &&
                     mons[j].y >= mons[i].y && mons[j].y + mons[j].height <= mons[i].y + mons[i].height) {
                     mons[j].width = 0;
