@@ -1318,7 +1318,7 @@ init (char *wm_name)
 
         // Make sure that the window really gets in the place it's supposed to be
         // Some WM such as Openbox need this
-        xcb_configure_window(c, mon->window, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, (const uint32_t []){ mon->x, mon->y });
+        xcb_configure_window(c, mon->window, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_STACK_MODE, (const uint32_t []){ mon->x, mon->y, XCB_STACK_MODE_BELOW });
 
         // Set the WM_NAME atom to the user specified value
         if (wm_name)
