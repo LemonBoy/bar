@@ -563,8 +563,8 @@ parse (char *text)
                     // Define input area.
                     case 'A': {
                         button = XCB_BUTTON_INDEX_1;
-                        // The range is 1-5
-                        if (isdigit(*p) && (*p > '0' && *p < '6'))
+                        // The range is 1-9
+                        if (isdigit(*p) && (*p > '0' && *p <= '9'))
                             button = *p++ - '0';
                         if (!area_add(p, block_end, &p, cur_mon, pos_x, align, button))
                             return;

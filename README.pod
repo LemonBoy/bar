@@ -122,7 +122,7 @@ Create a clickable area starting from the current position, when the area is cli
 
 Eg. I<%{A:reboot:} Click here to reboot %{A}>
 
-The I<button> field is optional, it defaults to the left button, and it's a number ranging from 1 to 5 which maps to the left, middle, right, scroll up and scroll down movements. Your mileage may vary.
+The I<button> field is optional, it defaults to the left button, and it's a number ranging from 1 to 9 which maps to the left, middle, right, scroll up, scroll down, scroll left, scroll right, 4th button (aka browser back), and 5th button (aka browser forward) movements (c.f. http://xahlee.info/linux/linux_x11_mouse_button_number.html). Your mileage may vary.
 
 Nested clickable areas can trigger different commands.
 
